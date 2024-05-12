@@ -1,2 +1,2 @@
 # AdventureBridgeContract
-bridge contract
+bridge contract with listener
