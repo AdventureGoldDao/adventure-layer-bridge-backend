@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract L2Contract {
+contract AdventureLayerSepoliaTransfer {
     address public owner;
 
     event Deposit(address indexed sender, uint256 amount, address indexed recipient);
@@ -11,15 +11,18 @@ contract L2Contract {
         owner = msg.sender;
     }
 
-    function deposit(address payable recipient) external payable {
+    function deposit(address payable recipient,uint256 amount) external payable {
         require(recipient != address(0), "Invalid recipient address");
-        recipient.transfer(msg.value);
-        emit Deposit(msg.sender, msg.value, recipient);
+        recipient.transfer(amount);
+        emit Deposit(msg.sender, amount, recipient);
     }
 
-    function withdraw(address payable recipient, uint256 amount) external {
+    function withdraw(address payable recipient, uint256 amount) external payable{
         require(msg.sender == owner, "Only owner can withdraw");
         recipient.transfer(amount);
         emit Withdrawal(recipient, amount);
+    }
+    function getBalance(address account) public view returns(uint256) {
+        return account.balance;
     }
 }
