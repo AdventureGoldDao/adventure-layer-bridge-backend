@@ -1,6 +1,8 @@
 const w3 = require('web3');
 require('dotenv').config();
 const {Web3} = require('web3');
+const BN = require('bn.js'); // 导入 BN 库
+
 const sepoliaConfig = {
     //url: 'wss://ethereum-sepolia-rpc.publicnode.com',
 	url: 'wss://sepolia.drpc.org',
@@ -150,17 +152,34 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 	const gasPriceGwei = '15'; // Replace with the desired gas price in Gwei
 	const gasLimit = 21000; // Replace with the desired gas limit
   
-	// Construct the transaction object
-	const transactionObject = {
-	  from: senderAddress,
-	  to: recipientAddress,
-	  value: w3.utils.toWei(amountToSend, 'ether'),
-	  gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
-	  gas: gasLimit,
-	}
+
   
 	// Sign the transaction with sender's private key and send it
 	try {
+
+	  // 获取当前区块
+	  const block = await rpc_web3.eth.getBlock('latest');
+	
+	  const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
+
+	  // 设置费用参数
+	  const maxPriorityFeePerGas = new BN(w3.utils.toWei('2', 'gwei')); // 优先费用
+  
+	  // 计算最大费用：最大费用 = 基础费用 * 2 + 优先费用
+	  const maxFeePerGas = baseFeePerGas.mul(new BN(2)).add(maxPriorityFeePerGas);
+	
+	  // Construct the transaction object
+	  const transactionObject = {
+		from: senderAddress,
+		to: recipientAddress,
+		value: w3.utils.toWei(amountToSend, 'ether'),
+		gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
+		gas: gasLimit,
+		maxFeePerGas: maxFeePerGas.toString(),
+        maxPriorityFeePerGas: maxPriorityFeePerGas,
+	  }
+	  
+
 	  console.log(net_name, 'begin Transaction:', JSON.stringify(transactionObject));
 	  const signedTx = await rpc_web3.eth.accounts.signTransaction(transactionObject, senderPrivateKey)
 	  rpc_web3.eth.sendSignedTransaction(signedTx.rawTransaction)
