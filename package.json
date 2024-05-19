@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "web3": "^4.8.0"
+  }
+}

@@ -28,4 +28,9 @@ contract AdventureLayerTransfer {
         _to.transfer(amount);
         emit FundsSend(_to, amount);
     }
+
+    //get balance
+    function get_balance(address account) public view returns(uint256) {
+        return account.balance;
+    }
 }
