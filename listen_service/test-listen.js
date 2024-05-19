@@ -161,6 +161,7 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
   
 	// Sign the transaction with sender's private key and send it
 	try {
+	  console.log(net_name, 'begin Transaction:', JSON.stringify(transactionObject));
 	  const signedTx = await rpc_web3.eth.accounts.signTransaction(transactionObject, senderPrivateKey)
 	  rpc_web3.eth.sendSignedTransaction(signedTx.rawTransaction)
 		.on('transactionHash', txHash => {
