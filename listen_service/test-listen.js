@@ -139,45 +139,58 @@ const abi = [
 ];
 
 async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, amount) {
+
+	console.log(net_name, 'call sendToAddress', sender,recipient,amount);
 	// Sender's account address and private key
 	const senderAddress = sender
-	const senderPrivateKey = privateKey
-  
+	const senderPrivateKey = privateKey  
 	// Recipient's account address
-	const recipientAddress = recipient
-  
+	const recipientAddress = recipient  
 	// Amount to transfer (in Ether)
-	const amountToSend = amount; // Replace with the amount to transfer
+	const amountToSend = '0.1'; // Replace with the amount to transfer
   
-	const gasPriceGwei = '15'; // Replace with the desired gas price in Gwei
-	const gasLimit = 21000; // Replace with the desired gas limit
-  
-
-  
+	let gasPriceGwei = '5'; // Replace with the desired gas price in Gwei
+	let gasLimit = 21000; // Replace with the desired gas limit  
 	// Sign the transaction with sender's private key and send it
+
+	let transactionObject = {};
 	try {
 
-	  // 获取当前区块
-	  const block = await rpc_web3.eth.getBlock('latest');
-	
-	  const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
+		if (net_name == chainConfig.l1_name) {
+			// 获取当前区块
+			const block = await rpc_web3.eth.getBlock('latest');
+			const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
+			// 设置费用参数
+			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); // 优先费用
+			// 计算最大费用：最大费用 = 基础费用 * 2 + 优先费用
+			const maxFeePerGas = baseFeePerGas.mul(new BN(1.1)).add(maxPriorityFeePerGas);
+			//const txCnt = await rpc_web3.eth.getTransactionCount(chainConfig.owner_address);
+			//const accountNonce = '0x' + (txCnt).toString(16);
+			//console.log('txCnt:', txCnt, 'accountNonce:', accountNonce);
+			// Construct the transaction object
+			transactionObject = {
+				//nonce: accountNonce,
+				from: senderAddress,
+				to: recipientAddress,
+				value: w3.utils.toWei(amountToSend, 'ether'),
+				//gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
+				gas: gasLimit,
+				maxFeePerGas: maxFeePerGas.toString(),
+				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+			}
+		}
+	  else {
 
-	  // 设置费用参数
-	  const maxPriorityFeePerGas = new BN(w3.utils.toWei('2', 'gwei')); // 优先费用
-  
-	  // 计算最大费用：最大费用 = 基础费用 * 2 + 优先费用
-	  const maxFeePerGas = baseFeePerGas.mul(new BN(2)).add(maxPriorityFeePerGas);
-	
-	  // Construct the transaction object
-	  const transactionObject = {
-		from: senderAddress,
-		to: recipientAddress,
-		value: w3.utils.toWei(amountToSend, 'ether'),
-		gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
-		gas: gasLimit,
-		maxFeePerGas: maxFeePerGas.toString(),
-        maxPriorityFeePerGas: maxPriorityFeePerGas,
+		transactionObject = {
+			from: senderAddress,
+			to: recipientAddress,
+			value: w3.utils.toWei(amountToSend, 'ether'),
+			gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
+			gas: gasLimit,
+		}
+
 	  }
+	  
 	  
 
 	  console.log(net_name, 'begin Transaction:', JSON.stringify(transactionObject));
@@ -207,14 +220,23 @@ sepoliaReceiverContract.events.Deposit()
 		const senderAddress = event.returnValues.sender;
 		const sendAmount = event.returnValues.amount;
         console.log('sepoliaReceiverContract Event received - Sender:', senderAddress, 'Amount:', sendAmount);
-		sendToAddress( chainConfig.l2_name,sepoliaRpcWeb3, chainConfig.owner_address, 
+
+		if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
+			return; //skip
+		}
+		sendToAddress( chainConfig.l2_name, l2RpcWeb3, chainConfig.owner_address, 
 			chainConfig.owner_private_key, senderAddress, sendAmount);
     })
 
 l2ReceiverContract.events.Deposit()
     .on('data', function (event) {
+		const senderAddress = event.returnValues.sender;
+		const sendAmount = event.returnValues.amount;
         console.log('l2ReceiverContract Event received - Sender:', event.returnValues.sender, 'Amount:', event.returnValues.amount);
-		sendToAddress(chainConfig.l1_name, l2RpcWeb3, chainConfig.owner_address, chainConfig.owner_private_key, senderAddress, sendAmount);
+		if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
+			return; //skip
+		}
+		sendToAddress(chainConfig.l1_name, sepoliaRpcWeb3, chainConfig.owner_address, chainConfig.owner_private_key, senderAddress, sendAmount);
     })
 
 process.stdin.resume();
