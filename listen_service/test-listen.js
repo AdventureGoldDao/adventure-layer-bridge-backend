@@ -147,7 +147,7 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 	// Recipient's account address
 	const recipientAddress = recipient  
 	// Amount to transfer (in Ether)
-	const amountToSend = '0.1'; // Replace with the amount to transfer
+	const amountToSend = amount; // Replace with the amount to transfer
   
 	let gasPriceGwei = '5'; // Replace with the desired gas price in Gwei
 	let gasLimit = 21000; // Replace with the desired gas limit  
@@ -157,6 +157,16 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 	try {
 
 		if (net_name == chainConfig.l1_name) {
+
+			const tx = {
+				from: senderAddress, // Your account address
+				to: recipientAddress, // Recipient address
+				value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'), // Value in wei
+			};
+		    //let esGasAmount = await rpc_web3.eth.estimateGas(tx)
+  
+    		//console.log('Estimated Gas:', esGasAmount);
+
 			// 获取当前区块
 			const block = await rpc_web3.eth.getBlock('latest');
 			const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
@@ -172,11 +182,12 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 				//nonce: accountNonce,
 				from: senderAddress,
 				to: recipientAddress,
-				value: w3.utils.toWei(amountToSend, 'ether'),
+				value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'),
 				//gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
 				gas: gasLimit,
 				maxFeePerGas: maxFeePerGas.toString(),
 				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+				//gas: esGasAmount.toString(),
 			}
 		}
 	  else {
@@ -184,7 +195,7 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 		transactionObject = {
 			from: senderAddress,
 			to: recipientAddress,
-			value: w3.utils.toWei(amountToSend, 'ether'),
+			value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'),
 			gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
 			gas: gasLimit,
 		}
@@ -208,12 +219,12 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 	} catch (err) {
 	  console.error(net_name, 'Signing Error:', err);
 	}
-  }
+}
 
   
 // Create contract instance
-const sepoliaReceiverContract = new sepoliaWsWeb3.eth.Contract(abi, sepoliaWsWeb3.address);
-const l2ReceiverContract = new l2WsWeb3.eth.Contract(abi, l2WsWeb3.address);
+const sepoliaReceiverContract = new sepoliaWsWeb3.eth.Contract(abi, sepoliaConfig.address);
+const l2ReceiverContract = new l2WsWeb3.eth.Contract(abi, l2Config.address);
 // Subscribe to the FundsReceived event
 sepoliaReceiverContract.events.Deposit()
     .on('data', function (event) {
