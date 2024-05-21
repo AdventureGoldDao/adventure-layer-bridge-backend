@@ -163,10 +163,6 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 				to: recipientAddress, // Recipient address
 				value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'), // Value in wei
 			};
-		    //let esGasAmount = await rpc_web3.eth.estimateGas(tx)
-  
-    		//console.log('Estimated Gas:', esGasAmount);
-
 			// 获取当前区块
 			const block = await rpc_web3.eth.getBlock('latest');
 			const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
@@ -174,20 +170,15 @@ async function sendToAddress(net_name,rpc_web3, sender, privateKey, recipient, a
 			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); // 优先费用
 			// 计算最大费用：最大费用 = 基础费用 * 2 + 优先费用
 			const maxFeePerGas = baseFeePerGas.mul(new BN(1.1)).add(maxPriorityFeePerGas);
-			//const txCnt = await rpc_web3.eth.getTransactionCount(chainConfig.owner_address);
-			//const accountNonce = '0x' + (txCnt).toString(16);
-			//console.log('txCnt:', txCnt, 'accountNonce:', accountNonce);
 			// Construct the transaction object
 			transactionObject = {
 				//nonce: accountNonce,
 				from: senderAddress,
 				to: recipientAddress,
 				value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'),
-				//gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
 				gas: gasLimit,
 				maxFeePerGas: maxFeePerGas.toString(),
 				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
-				//gas: esGasAmount.toString(),
 			}
 		}
 	  else {
@@ -232,9 +223,9 @@ sepoliaReceiverContract.events.Deposit()
 		const sendAmount = event.returnValues.amount;
         console.log('sepoliaReceiverContract Event received - Sender:', senderAddress, 'Amount:', sendAmount);
 
-		if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
-			return; //skip
-		}
+		// if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
+		// 	return; //skip
+		// }
 		sendToAddress( chainConfig.l2_name, l2RpcWeb3, chainConfig.owner_address, 
 			chainConfig.owner_private_key, senderAddress, sendAmount);
     })
@@ -244,9 +235,9 @@ l2ReceiverContract.events.Deposit()
 		const senderAddress = event.returnValues.sender;
 		const sendAmount = event.returnValues.amount;
         console.log('l2ReceiverContract Event received - Sender:', event.returnValues.sender, 'Amount:', event.returnValues.amount);
-		if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
-			return; //skip
-		}
+		// if(senderAddress != '0x20E37EbE5709F7B6C7E2f300fa0fb8b2f8DcC733'){
+		// 	return; //skip
+		// }
 		sendToAddress(chainConfig.l1_name, sepoliaRpcWeb3, chainConfig.owner_address, chainConfig.owner_private_key, senderAddress, sendAmount);
     })
 
