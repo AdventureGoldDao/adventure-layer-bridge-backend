@@ -46,7 +46,7 @@ server.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
     try{
 
-        // Set up an interval to check the queue every 5 seconds
+        // Set up an interval to check the queue every 1 second
         setInterval(processQueue, 1000);
 
         //listen events and add data to queue

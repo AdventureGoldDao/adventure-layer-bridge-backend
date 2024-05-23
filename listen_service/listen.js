@@ -3,6 +3,9 @@ require('dotenv').config();
 const { Web3 } = require('web3');
 const BN = require('bn.js'); // 导入 BN 库
 const abis = require('./contracts/abis');
+const fetch = require('node-fetch')
+const fs = require('fs');
+
 
 const chainConfig = {
 	l2_wss_url: 'ws://3.84.203.161:8548',
@@ -13,9 +16,12 @@ const chainConfig = {
 	owner_private_key: process.env.L2_OWNER_PRIVATE_KEY,
 	l1_name: 'Sepolia Testnet',
 	l2_name: 'Adventure Layer devnet',
-	l1_contract_address:'0x5121E26E9f08F176b9e9aF0BF95b3FCd8a9a4B24',
-	l2_contract_address:'0xC214Ce0a2C22AaD2e6Fa48E89e5eF096ce6D7d92',
+	l1_contract_address: '0x5121E26E9f08F176b9e9aF0BF95b3FCd8a9a4B24',
+	l2_contract_address: '0xC214Ce0a2C22AaD2e6Fa48E89e5eF096ce6D7d92',
+	l1_graph_query_url: 'https://api.studio.thegraph.com/query/76173/adventure-layer-dev/v1',
 }
+
+let last_id = require('./last_id.json').value;
 
 console.log('chainConfig.owner:', chainConfig.owner_address);
 // Connect to an Ethereum node
@@ -95,7 +101,7 @@ async function do_transaction(net_name, recipient, amount) {
 				console.error(net_name, 'Transaction Error:', err);
 			})
 
-			
+
 	} catch (err) {
 		console.error(net_name, 'Signing Error:', err);
 	}
@@ -104,12 +110,83 @@ async function do_transaction(net_name, recipient, amount) {
 
 function listen_deposit_events(msg_queue) {
 	// Create contract instance
-	const sepoliaReceiverContract = new sepoliaWsWeb3.eth.Contract(abi, chainConfig.l1_contract_address);
+	//const sepoliaReceiverContract = new sepoliaWsWeb3.eth.Contract(abi, chainConfig.l1_contract_address);
 	const l2ReceiverContract = new l2WsWeb3.eth.Contract(abi, chainConfig.l2_contract_address);
-	listen_deposit_event_from_contract(chainConfig.l1_name, sepoliaReceiverContract, msg_queue);
-	listen_deposit_event_from_contract(chainConfig.l2_name, l2ReceiverContract, msg_queue);
+	//listen_deposit_event_from_contract(chainConfig.l1_name, sepoliaReceiverContract, msg_queue);
+	//use graph sql to query the latest deposit events
+	setInterval(() => {
+		fetch_deposit_event_by_graph_sql(msg_queue);
+	}, 5000);
+	listen_deposit_event_from_contract(chainConfig.l2_name, l2ReceiverContract, msg_queue);//l2
 
 }
+
+
+
+async function fetch_deposit_event_by_graph_sql(msg_queue) {
+  const query = `
+  {
+    deposits(orderBy: blockTimestamp, orderDirection: desc, first: 1) {
+      id
+      sender
+      amount
+      blockNumber
+      blockTimestamp
+	  transactionHash
+    }
+  }
+  `;
+
+    try{
+		console.log('fetch_deposit_event_by_graph_sql query data:', JSON.stringify({ query }));
+		const response = await fetch(chainConfig.l1_graph_query_url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query })
+		});
+	
+		const data = await response.json()
+		console.log('fetch_deposit_event_by_graph_sql result data:', JSON.stringify(data));
+		if(data.data && data.data.deposits && data.data.deposits[0]){
+			const elem = data.data.deposits[0];
+
+			if(elem.id !== last_id){
+				const queue_data = {
+					net_name: chainConfig.l2_name,
+					address: elem.sender,
+					amount: elem.amount,
+				}
+				msg_queue.push(queue_data); // Add data to the queue
+				console.log('fetch_deposit_event_by_graph_sql add to queue:', JSON.stringify(queue_data), elem.id);
+				last_id = elem.id;
+
+				fs.writeFile('last_id_new.json', JSON.stringify({
+					value: last_id
+				}), 'utf8', (err) => {
+					if (err) {
+						console.error('Error writing file:', err);
+						return;
+					}
+					console.log('last_id_new.json has been written successfully');
+				});
+			}
+			else {
+				console.log('fetch_deposit_event_by_graph_sql skip data:', JSON.stringify(elem), elem.id);
+			}
+			
+		}
+
+
+	}
+	catch(err){
+		console.error('fetch_deposit_event_by_graph_sql Error:', err);
+	}
+	
+	
+
+
+}
+
 
 function listen_deposit_event_from_contract(net_name, target_contract, msg_queue) {
 
@@ -118,20 +195,22 @@ function listen_deposit_event_from_contract(net_name, target_contract, msg_queue
 		.on('data', function (event) {
 			const senderAddress = event.returnValues.sender;
 			const sendAmount = event.returnValues.amount;
-			console.log(net_name,'Contract Event received - Sender:', senderAddress, 'Amount:', sendAmount);
+			console.log(net_name, 'Contract Event received - Sender:', senderAddress, 'Amount:', sendAmount);
 			//choose the opposite net
 			let result_net_name = ((net_name == chainConfig.l1_name) ? chainConfig.l2_name : chainConfig.l1_name);
 			msg_queue.push({
-				net_name:result_net_name,
-				address:senderAddress,
-				amount:sendAmount.toString(),
+				net_name: result_net_name,
+				address: senderAddress,
+				amount: sendAmount.toString(),
 			}); // Add data to the queue
 
 		})
 }
 
 
+
+
 module.exports = {
 	do_transaction,
 	listen_deposit_events
-  };
+};
