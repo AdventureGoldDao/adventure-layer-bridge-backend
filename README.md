@@ -1,2 +1,2 @@
 # AdventureBridgeContract
-bridge contract with listener
+bridge backend,includes api server and listen service
