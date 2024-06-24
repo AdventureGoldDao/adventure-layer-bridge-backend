@@ -99,6 +99,8 @@ async function do_transaction(net_name, recipient, amount) {
 			})
 			.on('error', err => {
 				console.error(net_name, 'Transaction Error:', err);
+			}).catch(err => {
+				console.error(net_name, 'Transaction catch:', err);
 			})
 
 
