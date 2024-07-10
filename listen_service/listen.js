@@ -1,7 +1,7 @@
 const w3 = require('web3');
 require('dotenv').config();
 const { Web3 } = require('web3');
-const BN = require('bn.js'); // 导入 BN 库
+const BN = require('bn.js');
 const abis = require('./contracts/abis');
 const fetch = require('node-fetch')
 const fs = require('fs');
@@ -57,12 +57,11 @@ async function do_transaction(net_name, recipient, amount) {
 	try {
 
 		if (net_name == chainConfig.l1_name) {
-			// 获取当前区块
+			// get current block
 			const block = await rpc_web3.eth.getBlock('latest');
-			const baseFeePerGas = new BN(block.baseFeePerGas); // 将 baseFeePerGas 转换为 BN 对象
-			// 设置费用参数
-			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); // 优先费用
-			// 计算最大费用：最大费用 = 基础费用 * 2 + 优先费用
+			const baseFeePerGas = new BN(block.baseFeePerGas); // convert baseFeePerGas to BN object
+			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); // maxPriorityFeePerGas
+			// maxFeePerGas = baseFeePerGas * 1.1 + maxPriorityFeePerGas
 			const maxFeePerGas = baseFeePerGas.mul(new BN(1.1)).add(maxPriorityFeePerGas);
 			// Construct the transaction object
 			transactionObject = {
