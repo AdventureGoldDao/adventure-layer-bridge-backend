@@ -8,16 +8,16 @@ const fs = require('fs');
 
 
 const chainConfig = {
-	l2_wss_url: 'ws://3.84.203.161:8548',
+	l2_wss_url: 'wss://rpc.adventurelayer.xyz',
 	l1_wss_url: 'wss://sepolia.drpc.org',
-	l2_rpc_url: 'http://3.84.203.161:8547',
+	l2_rpc_url: 'https://rpc.adventurelayer.xyz',
 	l1_rpc_url: 'https://rpc.sepolia.org',
 	owner_address: process.env.L2_OWNER_ADDRESS,
 	owner_private_key: process.env.L2_OWNER_PRIVATE_KEY,
 	l1_name: 'Sepolia Testnet',
 	l2_name: 'Adventure Layer devnet',
 	l1_contract_address: '0x5121E26E9f08F176b9e9aF0BF95b3FCd8a9a4B24',
-	l2_contract_address: '0xC214Ce0a2C22AaD2e6Fa48E89e5eF096ce6D7d92',
+	l2_contract_address: '0x23f20555c221111fec21cE3F09C536410bdaFFd9',
 	l1_graph_query_url: 'https://api.studio.thegraph.com/query/76173/adventure-layer-dev/v1',
 }
 
