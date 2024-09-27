@@ -6,20 +6,20 @@ const abis = require('./contracts/abis');
 const fetch = require('node-fetch')
 const fs = require('fs');
 
-
 const chainConfig = {
-	l2_wss_url: 'wss://rpc.adventurelayer.xyz',
-	l1_wss_url: 'wss://sepolia.drpc.org',
-	l2_rpc_url: 'https://rpc.adventurelayer.xyz',
-	l1_rpc_url: 'https://rpc.sepolia.org',
+	l2_wss_url: process.env.L2_WSS_URL,
+	l1_wss_url: process.env.L1_WSS_URL,
+	l2_rpc_url: process.env.L2_RPC_URL,
+	l1_rpc_url: process.env.L1_RPC_URL,
 	owner_address: process.env.L2_OWNER_ADDRESS,
 	owner_private_key: process.env.L2_OWNER_PRIVATE_KEY,
-	l1_name: 'Sepolia Testnet',
-	l2_name: 'Adventure Layer devnet',
-	l1_contract_address: '0x5121E26E9f08F176b9e9aF0BF95b3FCd8a9a4B24',
-	l2_contract_address: '0x23f20555c221111fec21cE3F09C536410bdaFFd9',
-	l1_graph_query_url: 'https://api.studio.thegraph.com/query/76173/adventure-layer-dev/v1',
-}
+	l1_name: process.env.L1_NAME,
+	l2_name: process.env.L2_NAME,
+	l1_contract_address: process.env.L1_CONTRACT_ADDRESS,
+	l2_contract_address: process.env.L2_CONTRACT_ADDRESS,
+	l1_graph_query_url: process.env.L1_GRAPH_QUERY_URL,
+};
+
 
 let last_id = require('./last_id.json').value;
 

@@ -2,3 +2,4 @@
 node_modules
 last_id_new.json
 yarn.lock
+/package-lock.json
