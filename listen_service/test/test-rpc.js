@@ -1,5 +1,11 @@
 const axios = require('axios');
 
+/**
+ * Tests the validity of an RPC address by sending a GET request.
+ *
+ * @param {string} rpcUrl - The URL of the RPC address to test.
+ * @returns {Promise<void>} - A promise that resolves when the test is complete.
+ */
 async function testRPCAddress(rpcUrl) {
     try {
         const response = await axios.get(rpcUrl);
