@@ -8,8 +8,7 @@ const fs = require('fs');
 const mysql = require('mysql');
 const util = require('util');
 
-
-
+// config from env
 const chainConfig = {
     l1_name: process.env.L1_NAME,
     l1_wss_url: process.env.L1_WSS_URL,
@@ -127,15 +126,6 @@ async function do_transaction(to, recipient, amount) {
 			const baseFeePerGas = new BN(block.baseFeePerGas); 
 			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); 
 			const maxFeePerGas = baseFeePerGas.mul(new BN(1.5)).add(maxPriorityFeePerGas);
-			// // Construct the transaction object
-			// transactionObject = {
-			// 	from: senderAddress,
-			// 	to: recipientAddress,
-			// 	value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'),
-			// 	gas: gasLimit,
-			// 	maxFeePerGas: maxFeePerGas.toString(),
-			// 	maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
-			// }
 
 			//modify: transfer erc20 token for L1
 
@@ -152,9 +142,6 @@ async function do_transaction(to, recipient, amount) {
 				}
 			];
 			const tokenContract = new rpc_web3.eth.Contract(tokenABI, chainConfig.erc20_token_address);
-
-
-			//const tokenAmount = w3.utils.toBN(w3.utils.toWei(amountToSend, 'ether')); // amountToSend个代币，调整为你想要的数量
 
 			const data = tokenContract.methods.transfer(recipientAddress, amountToSend).encodeABI();
 
@@ -284,9 +271,7 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract , msg_queue
 		  }
 		}
 		`;
-	  // 其他代码...
-
-
+		
 		console.log('fetch_deposit_event_by_graph_sql query data:', JSON.stringify({ grquery }));
 		const response = await fetch(chainConfig.l1_graph_query_url, {
 			method: 'POST',
@@ -385,7 +370,7 @@ async function fetch_deposit_event_by_rpc(name, route,	msg_queue) {
         }
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
-        const fromBlock = last_id + 1; // 从上次记录的区块号开始查询
+        const fromBlock = last_id + 1; // start from last block number
         console.log('fetch_deposit_event_by_rpc query data:', name, fromBlock, latestBlock);
 
 		if(fromBlock > latestBlock){
@@ -393,7 +378,7 @@ async function fetch_deposit_event_by_rpc(name, route,	msg_queue) {
 			return;
 		}
 
-        // 查询从 fromBlock 到 latestBlock 的所有 Deposit 事件
+        // query all deposit events from fromBlock to latestBlock
         const events = await route.from.contract.getPastEvents('Deposit', {
             fromBlock: fromBlock,
             toBlock: latestBlock
