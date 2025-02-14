@@ -14,8 +14,6 @@ contract AdventureLayerSepoliaTransfer {
     }
 
     function deposit() external payable {
-        //require(recipient != address(0), "Invalid recipient address");
-        //recipient.transfer(amount);
         payable(owner).transfer(msg.value);
         emit Deposit(msg.sender, msg.value);
     }

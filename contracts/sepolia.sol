@@ -14,16 +14,14 @@ contract AdventureLayerSepoliaTransfer {
     }
 
     function deposit() external payable {
-        //require(recipient != address(0), "Invalid recipient address");
-        //recipient.transfer(amount);
         payable(owner).transfer(msg.value);
-        emit Deposit(msg.sender, msg.value);
+        emit Deposit(msg.sender, msg.value);//emit event
     }
 
     function withdraw(address payable recipient, uint256 amount) external {
         require(msg.sender == owner, "Only owner can withdraw");
         recipient.transfer(amount);
-        emit Withdrawal(recipient, amount);
+        emit Withdrawal(recipient, amount);//emit event
     }
     function getBalance(address account) public view returns(uint256) {
         return account.balance;
