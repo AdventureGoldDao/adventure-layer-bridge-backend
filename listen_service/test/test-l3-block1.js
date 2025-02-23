@@ -37,7 +37,7 @@ function testBlockTime() {
 testBlockTime();
 
 
-// 配置项维护多个账户和对端账户的信息
+// Configuration item maintains information of multiple accounts and peer accounts
 const accounts = [
     {
         senderAddress: '0xa659f022cb8d0Df682C327d2f16B6f2f41AD2aeA',
@@ -54,11 +54,11 @@ const accounts = [
         senderPrivateKey: '228365f13616c96906479b0e1dabbe3e124a3f08ba83ee16fe565d5376d2bfbd',
         recipientAddress: '0xbc8C79C69e40F404DAA9f5CC17Cb35868C262CfD',
     }
-    // 可以添加更多账户
+    // more accounts can be added
 ];
 
 let count = 0;
-const maxLoops = 1; // 设置要循环的次数
+const maxLoops = 1; // Set the number of times to cycle
 
 const interval = setInterval(() => {
     const accountIndex = count % accounts.length; // 循环使用账户
