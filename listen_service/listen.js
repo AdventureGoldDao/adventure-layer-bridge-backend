@@ -7,77 +7,24 @@ const fetch = require('node-fetch')
 const fs = require('fs');
 const mysql = require('mysql');
 const util = require('util');
-
-// config from env
-const chainConfig = {
-    l1_name: process.env.L1_NAME,
-    l1_wss_url: process.env.L1_WSS_URL,
-    l1_rpc_url: process.env.L1_RPC_URL,
-    l1_contract_address: process.env.L1_CONTRACT_ADDRESS,
-    l1_graph_query_url: process.env.L1_GRAPH_QUERY_URL,
-
-    l2_name: process.env.L2_NAME,
-    l2_rpc_url: process.env.L2_RPC_URL,
-    l2_wss_url: process.env.L2_WSS_URL,
-    l2_contract_address: process.env.L2_CONTRACT_ADDRESS,
-
-    shard1_name: process.env.SHARD1_NAME,
-    shard1_contract_address: process.env.SHARD1_CONTRACT_ADDRESS,
-    l2_to_shard1_contract_address: process.env.L2_TO_SHARD1_CONTRACT_ADDRESS,
-    shard1_rpc_url: process.env.SHARD1_RPC_URL,
-    shard1_wss_url: process.env.SHARD1_WSS_URL,
-
-    shard2_name: process.env.SHARD2_NAME,
-    shard2_contract_address: process.env.SHARD2_CONTRACT_ADDRESS,
-    l2_to_shard2_contract_address: process.env.L2_TO_SHARD2_CONTRACT_ADDRESS,
-    shard2_rpc_url: process.env.SHARD2_RPC_URL,
-    shard2_wss_url: process.env.SHARD2_WSS_URL,
-
-    erc20_token_address: process.env.ERC20_TOKEN_ADDRESS,
-};
+const { chainConfig } = require('./env');
+const { BlockchainConfig, ContractConfig, Route } = require('./config_class');
 
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
 
-class BlockchainConfig {
-	constructor(name, rpc_url,wss_url) {
-	  this.name = name;
-	  this.rpc_url = rpc_url;
-	  this.wss_url = wss_url;
-	  this.rpcWb3 = new Web3(this.rpc_url);
-	  this.wsWeb3 = new Web3(wss_url);
-	}
-}
-
-class ContractConfig{
-	constructor(address, chainConfig,owner_address,owner_private_key){
-		this.address = address;
-		this.chainConfig = chainConfig;
-		this.contract = new chainConfig.rpcWb3.eth.Contract(abi, address);
-		this.owner_address = owner_address;
-		this.owner_private_key = owner_private_key;
-	}
-
-}
-
-class Route{
-	constructor(from , to){
-		this.from = from;
-		this.to = to;
-	}
-}
 
 const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
 const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
 const shard1 = new BlockchainConfig(chainConfig.shard1_name,chainConfig.shard1_rpc_url,chainConfig.shard1_wss_url);
 const shard2 = new BlockchainConfig(chainConfig.shard2_name,chainConfig.shard2_rpc_url,chainConfig.shard2_wss_url);
 
-const l1_contract = new ContractConfig(chainConfig.l1_contract_address,l1,process.env.owner_address,process.env.owner_private_key);
-const l2_contract = new ContractConfig(chainConfig.l2_contract_address,l2,process.env.owner_address,process.env.owner_private_key);
-const l2_to_shard1_contract = new ContractConfig(chainConfig.l2_to_shard1_contract_address,l2,process.env.owner_address,process.env.owner_private_key);
-const l2_to_shard2_contract = new ContractConfig(chainConfig.l2_to_shard2_contract_address,l2,process.env.owner_address,process.env.owner_private_key);
-const shard1_contract = new ContractConfig(chainConfig.shard1_contract_address,shard1,process.env.owner_address,process.env.owner_private_key);
-const shard2_contract = new ContractConfig(chainConfig.shard2_contract_address,shard2,process.env.owner_address,process.env.owner_private_key);
+const l1_contract = new ContractConfig(chainConfig.l1_contract_address,l1,process.env.owner_address,process.env.owner_private_key,abi);
+const l2_contract = new ContractConfig(chainConfig.l2_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
+const l2_to_shard1_contract = new ContractConfig(chainConfig.l2_to_shard1_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
+const l2_to_shard2_contract = new ContractConfig(chainConfig.l2_to_shard2_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
+const shard1_contract = new ContractConfig(chainConfig.shard1_contract_address,shard1,process.env.owner_address,process.env.owner_private_key,abi);
+const shard2_contract = new ContractConfig(chainConfig.shard2_contract_address,shard2,process.env.owner_address,process.env.owner_private_key,abi);
 const routes = new Map();
 routes.set('L2->L1', new Route(l2_contract,l1_contract));
 routes.set('shard1->L2', new Route(shard1_contract,l2_to_shard1_contract));
