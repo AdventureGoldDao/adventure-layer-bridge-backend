@@ -4,11 +4,9 @@ const { Web3 } = require('web3');
 const BN = require('bn.js'); 
 const abis = require('./contracts/abis');
 const fetch = require('node-fetch')
-const fs = require('fs');
-const mysql = require('mysql');
-const util = require('util');
-const { chainConfig, dbConfig } = require('./env');
+const { chainConfig } = require('./env');
 const { BlockchainConfig, ContractConfig, Route } = require('./config_class');
+const DBUtils = require('./db_utils'); 
 
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
@@ -161,7 +159,7 @@ function listen_deposit_events() {
 
 
 
-async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
+async function fetch_deposit_event_by_graph_sql(name, to_contract) {
 //   const grquery = `
 //   {
 //     deposits(orderBy: blockTimestamp, orderDirection: desc, first: 1) {
@@ -174,31 +172,17 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
 //     }
 //   }
 //   `;
-  let db;
-    try{
-
-		db = mysql.createConnection({
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.user,
-            password: dbConfig.password,
-            database: dbConfig.database	
-        });
-
-        const connect = util.promisify(db.connect).bind(db);
-        const query = util.promisify(db.query).bind(db);
-
-        await connect();
-        console.log('Connected to MySQL');
+  try {
+		console.log('Connected to MySQL');
 		var last_id = 0;
-        const rows = await query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
-        if (rows.length > 0) {
-            last_id = rows[0].last_id;
-            console.log(`Last ID for ${name}: ${last_id}`);
-        } else {
-            console.error(`No last ID found for ${name}`);
+		const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
+		if (rows.length > 0) {
+			last_id = rows[0].last_id;
+			console.log(`Last ID for ${name}: ${last_id}`);
+		} else {
+			console.error(`No last ID found for ${name}`);
 			return;
-        }
+		}
 
 
 		const grquery = `
@@ -239,7 +223,7 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
 						amount: elem.amount,
 					}
 					//check if the transaction already exists
-					const existingTransaction = await query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${elem.blockNumber}`);
+					const existingTransaction = await DBUtils.query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${elem.blockNumber}`);
 					if (existingTransaction.length > 0) {
 						console.error(`Transaction already exists for ${name}, ${queue_data.address}, block ${elem.blockNumber}. Skipping.`);
 						return ;
@@ -260,12 +244,12 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
 					const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
 					const block_timestamp = new Date(elem.blockTimestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
 
-					await query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash , timestamp , block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}' , '${timestamp}' , '${block_timestamp}')`);
+					await DBUtils.query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}', '${timestamp}', '${block_timestamp}')`);
 					console.log('Transaction record inserted:', queue_data.address, queue_data.amount, blockNumber, timestamp);
 
 					last_id = blockNumber;
 
-					await query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
+					await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
 					console.log('update last_id:', last_id);
 				}
 				else {
@@ -279,32 +263,16 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
 	}
 	catch(err){
 		console.error('fetch_deposit_event_by_graph_sql Error:', err);
-	}finally{
-		db.end();
 	}
-	
 }
 
 
 //query the latest deposit events by rpc
 async function fetch_deposit_event_by_rpc(name, route) {
-	let db;
     try {
-        db = mysql.createConnection({
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.user,
-            password: dbConfig.password,
-            database: dbConfig.database	
-        });
-
-        const connect = util.promisify(db.connect).bind(db);
-        const query = util.promisify(db.query).bind(db);
-
-        await connect();
         console.log('Connected to MySQL');
 
-        const rows = await query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
+        const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
 		var last_id = 0;
         if (rows.length > 0) {
             last_id = rows[0].last_id;
@@ -344,7 +312,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                 console.log(queue_data);
                 console.log('fetch_deposit_event_by_rpc add to queue:', queue_data.contract, queue_data.address, queue_data.amount, blockNumber);
 				//check if the transaction already exists
-				const existingTransaction = await query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${blockNumber}`);
+				const existingTransaction = await DBUtils.query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${blockNumber}`);
                 if (existingTransaction.length > 0) {
                     console.log(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}. Skipping.`);
                     continue;
@@ -362,19 +330,17 @@ async function fetch_deposit_event_by_rpc(name, route) {
 				//insert transaction record
 				const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
 				const block_timestamp = timestamp; 
-				await query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}' , '${timestamp}' , '${block_timestamp}')`);
+				await DBUtils.query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}', '${timestamp}', '${block_timestamp}')`);
 				console.log('Transaction record inserted:', queue_data.address, queue_data.amount, blockNumber, timestamp);
 				//update last_id
 				last_id = blockNumber;
-				await query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
+				await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
                 console.log('update last_id:', last_id);
             }
         };
 		
     } catch (err) {
         console.error('fetch_deposit_event_by_rpc Error:', err);
-    } finally {
-        db.end();
     }
 }
 
