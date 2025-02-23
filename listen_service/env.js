@@ -24,6 +24,16 @@ const chainConfig = {
   erc20_token_address: process.env.ERC20_TOKEN_ADDRESS,
 };
 
+// MySQL configuration
+const dbConfig = {
+  host: process.env.MYSQL_HOST,
+  port: process.env.MYSQL_PORT,
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE,
+};
+
 module.exports = {
-  chainConfig
+  chainConfig,
+  dbConfig 
 }; 

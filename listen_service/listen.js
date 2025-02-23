@@ -7,7 +7,7 @@ const fetch = require('node-fetch')
 const fs = require('fs');
 const mysql = require('mysql');
 const util = require('util');
-const { chainConfig } = require('./env');
+const { chainConfig, dbConfig } = require('./env');
 const { BlockchainConfig, ContractConfig, Route } = require('./config_class');
 
 // ABI of the EtherReceiver contract
@@ -178,11 +178,11 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract , msg_queue
     try{
 
 		db = mysql.createConnection({
-            host: process.env.MYSQL_HOST,
-            port: process.env.MYSQL_PORT,
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASSWORD,
-            database: process.env.MYSQL_DATABASE	
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            database: dbConfig.database	
         });
 
         const connect = util.promisify(db.connect).bind(db);
@@ -293,11 +293,11 @@ async function fetch_deposit_event_by_rpc(name, route,	msg_queue) {
 	let db;
     try {
         db = mysql.createConnection({
-            host: process.env.MYSQL_HOST,
-            port: process.env.MYSQL_PORT,
-            user: process.env.MYSQL_USER,
-            password: process.env.MYSQL_PASSWORD,
-            database: process.env.MYSQL_DATABASE	
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            database: dbConfig.database	
         });
 
         const connect = util.promisify(db.connect).bind(db);
