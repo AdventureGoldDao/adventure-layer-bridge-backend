@@ -144,16 +144,16 @@ async function do_transaction(to, recipient, amount) {
 }
 
 
-function listen_deposit_events(msg_queue) {
+function listen_deposit_events() {
 
 	//use graph sql to query the latest deposit events
 	setInterval(() => {
-		fetch_deposit_event_by_graph_sql('L1->L2', l2_contract , msg_queue);
+		fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
 	}, 5000);
 
 	for (const [name, route] of routes) {
 		setInterval(() => {
-			fetch_deposit_event_by_rpc(name, route,	msg_queue);
+			fetch_deposit_event_by_rpc(name, route );
 		}, 5000);
 	}
 
@@ -161,7 +161,7 @@ function listen_deposit_events(msg_queue) {
 
 
 
-async function fetch_deposit_event_by_graph_sql(  name , to_contract , msg_queue) {
+async function fetch_deposit_event_by_graph_sql(  name , to_contract ) {
 //   const grquery = `
 //   {
 //     deposits(orderBy: blockTimestamp, orderDirection: desc, first: 1) {
@@ -245,8 +245,6 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract , msg_queue
 						return ;
 					}
 
-					//msg_queue.push(queue_data); // Add data to the queue
-
 					//do transaction
 					const result = await do_transaction(
 						queue_data.contract,
@@ -289,7 +287,7 @@ async function fetch_deposit_event_by_graph_sql(  name , to_contract , msg_queue
 
 
 //query the latest deposit events by rpc
-async function fetch_deposit_event_by_rpc(name, route,	msg_queue) {
+async function fetch_deposit_event_by_rpc(name, route) {
 	let db;
     try {
         db = mysql.createConnection({

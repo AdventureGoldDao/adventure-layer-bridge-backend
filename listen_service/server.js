@@ -1,23 +1,22 @@
 const http = require('http');
-const {do_transaction, listen_deposit_events} = require('./listen')
-const queue = []; // Simulated queue
+const {listen_deposit_events} = require('./listen')
+//const queue = []; // Simulated queue
 
 // Function to process data from the queue
-function processQueue() {
-  if (queue.length > 0) {
-    const data = queue.shift(); // Get the first item from the queue
-    console.log('shift queue data:', data.contract.chainConfig.name , data.contract.address,data.address,data.amount);
-    // Add your data processing logic here
-    do_transaction(
-        data.contract,
-        data.address,
-        data.amount,
-    );
-  } else {
-    //console.log('No data to process');
-  }
-}
-
+// function processQueue() {
+//   if (queue.length > 0) {
+//     const data = queue.shift(); // Get the first item from the queue
+//     console.log('shift queue data:', data.contract.chainConfig.name , data.contract.address,data.address,data.amount);
+//     // Add your data processing logic here
+//     do_transaction(
+//         data.contract,
+//         data.address,
+//         data.amount,
+//     );
+//   } else {
+//     //console.log('No data to process');
+//   }
+// }
 
 
 // Create an HTTP server
@@ -47,10 +46,10 @@ server.listen(PORT, () => {
     try{
 
         // Set up an interval to check the queue every 1 second
-        setInterval(processQueue, 1000);
+        // setInterval(processQueue, 1000);
 
         //listen events and add data to queue
-        listen_deposit_events(queue);
+        listen_deposit_events();
     }
     catch (err) {
 		console.error('Error:', err);
