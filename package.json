@@ -1,10 +1,14 @@
 {
   "devDependencies": {
+
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "winston-daily-rotate-file": "^5.0.0",
     "bn.js": "^5.2.1",
     "dotenv": "^16.4.5",
-    "web3": "^4.8.0",
     "ethers": "^5.7.0",
-    "mysql": "^2.18.1" 
-  },
-  "type": "commonjs"
+    "mysql": "^2.18.1",
+    "web3": "^4.8.0"
+  }
 }

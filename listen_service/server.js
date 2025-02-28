@@ -1,5 +1,6 @@
 const http = require('http');
 const {listen_deposit_events} = require('./listen')
+const logger = require('./log_utils');
 //const queue = []; // Simulated queue
 
 // Function to process data from the queue
@@ -42,7 +43,7 @@ const server = http.createServer((req, res) => {
 // Start the server
 const PORT = 8501;
 server.listen(PORT, () => {
-    console.log(`Server is listening on port ${PORT}`);
+    logger.info(`Server is listening on port ${PORT}`);
     try{
 
         // Set up an interval to check the queue every 1 second
@@ -52,7 +53,7 @@ server.listen(PORT, () => {
         listen_deposit_events();
     }
     catch (err) {
-		console.error('Error:', err);
+		logger.error('Error:', err);
 	}
 
 });

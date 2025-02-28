@@ -33,7 +33,15 @@ const dbConfig = {
   database: process.env.MYSQL_DATABASE,
 };
 
+// Logging configuration
+const logConfig = {
+  errorFilename: process.env.LOG_ERROR_FILENAME,
+  combinedFilename: process.env.LOG_COMBINED_FILENAME,
+  maxFiles: process.env.LOG_MAX_FILES,
+};
+
 module.exports = {
   chainConfig,
-  dbConfig 
+  dbConfig,
+  logConfig 
 }; 

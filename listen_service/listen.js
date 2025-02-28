@@ -7,10 +7,9 @@ const fetch = require('node-fetch')
 const { chainConfig } = require('./env');
 const { BlockchainConfig, ContractConfig, Route } = require('./config_class');
 const DBUtils = require('./db_utils'); 
-
+const logger = require('./log_utils');
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
-
 
 const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
 const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
@@ -143,7 +142,7 @@ async function do_transaction(to, recipient, amount) {
 
 
 function listen_deposit_events() {
-
+	logger.info('listen_deposit_events start');
 	//use graph sql to query the latest deposit events
 	setInterval(() => {
 		fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
