@@ -16,18 +16,54 @@ const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chain
 const shard1 = new BlockchainConfig(chainConfig.shard1_name,chainConfig.shard1_rpc_url,chainConfig.shard1_wss_url);
 const shard2 = new BlockchainConfig(chainConfig.shard2_name,chainConfig.shard2_rpc_url,chainConfig.shard2_wss_url);
 
-const l1_contract = new ContractConfig(chainConfig.l1_contract_address,l1,process.env.owner_address,process.env.owner_private_key,abi);
-const l2_contract = new ContractConfig(chainConfig.l2_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
-const l2_to_shard1_contract = new ContractConfig(chainConfig.l2_to_shard1_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
-const l2_to_shard2_contract = new ContractConfig(chainConfig.l2_to_shard2_contract_address,l2,process.env.owner_address,process.env.owner_private_key,abi);
-const shard1_contract = new ContractConfig(chainConfig.shard1_contract_address,shard1,process.env.owner_address,process.env.owner_private_key,abi);
-const shard2_contract = new ContractConfig(chainConfig.shard2_contract_address,shard2,process.env.owner_address,process.env.owner_private_key,abi);
+const l1_contract = new ContractConfig(
+    chainConfig.l1_contract_address,
+    l1,
+    chainConfig.l1_owner_address,
+    chainConfig.l1_owner_private_key,
+    abi
+);
+const l2_contract = new ContractConfig(
+    chainConfig.l2_contract_address,
+    l2,
+    chainConfig.l2_owner_address,
+    chainConfig.l2_owner_private_key,
+    abi
+);
+const l2_to_shard1_contract = new ContractConfig(
+    chainConfig.l2_to_shard1_contract_address,
+    l2,
+    chainConfig.l2_owner_address,
+    chainConfig.l2_owner_private_key,
+    abi
+);
+// const l2_to_shard2_contract = new ContractConfig(
+//     chainConfig.l2_to_shard2_contract_address,
+//     l2,
+//     chainConfig.l2_owner_address,
+//     chainConfig.l2_owner_private_key,
+//     abi
+// );
+const shard1_contract = new ContractConfig(
+    chainConfig.shard1_contract_address,
+    shard1,
+    chainConfig.shard1_owner_address,
+    chainConfig.shard1_owner_private_key,
+    abi
+);
+// const shard2_contract = new ContractConfig(
+//     chainConfig.shard2_contract_address,
+//     shard2,
+//     chainConfig.shard2_owner_address,
+//     chainConfig.shard2_owner_private_key,
+//     abi
+// );
 const routes = new Map();
-routes.set('L2->L1', new Route(l2_contract,l1_contract));
-routes.set('shard1->L2', new Route(shard1_contract,l2_to_shard1_contract));
-routes.set('L2->shard1', new Route(l2_to_shard1_contract,shard1_contract));
-//routes.set('shard2->L2', new Route(shard2_contract,l2_to_shard2_contract));
-//routes.set('L2->shard2', new Route(l2_to_shard2_contract,shard2_contract));
+routes.set('L2->L1', new Route(l2_contract, l1_contract));
+routes.set('shard1->L2', new Route(shard1_contract, l2_to_shard1_contract));
+routes.set('L2->shard1', new Route(l2_to_shard1_contract, shard1_contract));
+//routes.set('shard2->L2', new Route(shard2_contract, l2_to_shard2_contract));
+//routes.set('L2->shard2', new Route(l2_to_shard2_contract, shard2_contract));
 
 
 //let last_id = require('./last_id.json').value;
@@ -44,6 +80,11 @@ logger.info('chainConfig.owner(L2&shard):', l2_contract.owner_address);
 
 
 async function do_transaction(to, recipient, amount) {
+
+	if(chainConfig.mock_transactions){
+		logger.info('mock_transactions is true');
+		return true;
+	}
 
 	// Sender's account address and private key
 	const senderAddress = to.owner_address;
