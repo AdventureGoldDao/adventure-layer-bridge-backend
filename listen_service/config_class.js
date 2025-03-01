@@ -18,15 +18,15 @@ class BlockchainConfig {
 class ContractConfig {
 	constructor(address, chainConfig, owner_address, owner_private_key, abi) {
 		// Contract address on the blockchain
-		this.address = address;
+		this.address = address.startsWith('0x') ? address : '0x' + address;
 		// Blockchain configuration object
 		this.chainConfig = chainConfig;
 		// Web3 contract instance
-		this.contract = new chainConfig.rpcWb3.eth.Contract(abi, address);
+		this.contract = new chainConfig.rpcWb3.eth.Contract(abi, this.address);
 		// Owner's address of the contract
-		this.owner_address = owner_address;
+		this.owner_address = owner_address.startsWith('0x') ? owner_address : '0x' + owner_address;
 		// Owner's private key for signing transactions
-		this.owner_private_key = owner_private_key;
+		this.owner_private_key = owner_private_key.startsWith('0x') ? owner_private_key.slice(2) : owner_private_key;
 	}
 }
 
