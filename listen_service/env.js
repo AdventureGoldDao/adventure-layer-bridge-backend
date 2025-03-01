@@ -9,6 +9,7 @@ const chainConfig = {
   l1_name: process.env.L1_NAME,
   l1_wss_url: process.env.L1_WSS_URL,
   l1_rpc_url: process.env.L1_RPC_URL,
+  l1_graph_query_use: process.env.L1_GRAPH_QUERY_USE,
   l1_graph_query_url: process.env.L1_GRAPH_QUERY_URL,
 
   erc20_token_address: process.env.ERC20_TOKEN_ADDRESS,

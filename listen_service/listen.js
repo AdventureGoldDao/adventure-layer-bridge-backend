@@ -11,11 +11,13 @@ const logger = require('./log_utils');
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
 
+//connect to the blockchain
 const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
 const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
 const shard1 = new BlockchainConfig(chainConfig.shard1_name,chainConfig.shard1_rpc_url,chainConfig.shard1_wss_url);
-const shard2 = new BlockchainConfig(chainConfig.shard2_name,chainConfig.shard2_rpc_url,chainConfig.shard2_wss_url);
+//const shard2 = new BlockchainConfig(chainConfig.shard2_name,chainConfig.shard2_rpc_url,chainConfig.shard2_wss_url);
 
+//connect to the contract
 const l1_contract = new ContractConfig(
     chainConfig.l1_contract_address,
     l1,
@@ -66,17 +68,10 @@ routes.set('L2->shard1', new Route(l2_to_shard1_contract, shard1_contract));
 //routes.set('L2->shard2', new Route(l2_to_shard2_contract, shard2_contract));
 
 
-//let last_id = require('./last_id.json').value;
-
-logger.info('chainConfig.owner(L1):', l1_contract.owner_address);
-logger.info('chainConfig.owner(L2&shard):', l2_contract.owner_address);
-// Connect to an Ethereum node
-//const sepoliaRpcWeb3 = new Web3(chainConfig.l1_rpc_url); // Update with your Ethereum node URL
-//const sepoliaWsWeb3 = new Web3(chainConfig.l1_wss_url); // Update with your Ethereum node URL
-
-//const l2RpcWeb3 = new Web3(chainConfig.l2_rpc_url); // Update with your Ethereum node URL
-//const l2WsWeb3 = new Web3(chainConfig.l2_wss_url); // Update with your Ethereum node URL
-
+logger.info('chainConfig.owner(L1) ' + l1_contract.owner_address);
+logger.info(`chainConfig.owner(L2&shard): ${l2_contract.owner_address}`);
+logger.info(`chainConfig.mock_transactions: ${chainConfig.mock_transactions}`);
+logger.info(`chainConfig.l1_graph_query_use: ${chainConfig.l1_graph_query_use}`);
 
 
 async function do_transaction(to, recipient, amount) {
@@ -184,9 +179,14 @@ async function do_transaction(to, recipient, amount) {
 
 function listen_deposit_events() {
 	logger.info('listen_deposit_events start');
-	//use graph sql to query the latest deposit events
 	setInterval(() => {
-		fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
+		if(chainConfig.l1_graph_query_use == 'true'){
+			//use graph sql to query the latest deposit events
+			fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
+		}else{
+			//use rpc to query the latest deposit events
+			fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
+		}
 	}, 5000);
 
 	for (const [name, route] of routes) {
@@ -310,7 +310,7 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
 //query the latest deposit events by rpc
 async function fetch_deposit_event_by_rpc(name, route) {
     try {
-        logger.info('Connected to MySQL');
+        //logger.info('Connected to MySQL');
 
         const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
 		var last_id = 0;
