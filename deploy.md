@@ -1,11 +1,11 @@
-# Deployment Documentation
+# adventure-layer-bridge-backend deployment documentation
 
 ## Prerequisites
 
 Before you begin, ensure your system has the following software installed:
 
 - Node.js (recommended: latest LTS version)
-- npm (Node.js package manager, typically installed with Node.js)
+- PM2
 
 ## Clone the Project
 
@@ -88,8 +88,12 @@ Make sure to update these variables according to your database configuration.
 After configuring the environment variables, you can run the project using the following command:
 
 ```bash
-node .\listen_service\server.js
+pm2 start .\listen_service\server.js --name bridge-backend
 ```
+
+## Check Service Start Successfully
+1) check the listening port
+2) check the error or warning log
 
 ## Run Tests
 
