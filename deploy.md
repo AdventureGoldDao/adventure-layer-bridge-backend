@@ -46,6 +46,97 @@ L1_OWNER_ADDRESS=  # Owner's address
 L1_OWNER_PRIVATE_KEY=  # Owner's private key 
 ```
 
+### How to deploy the contracts
+
+To deploy the L1 contracts, please refer to the scripts available in the following repository: https://github.com/AdventureGoldDao/adventure-layer-scripts/tree/fourth-delivery/agld
+
+#### how to use GraphQL 
+
+```
+npm install -g @graphprotocol/graph-cli@latest
+
+yarn global add @graphprotocol/graph-cli
+
+# --from-contract  Bridge contract address 0xfdf38b612aadb51042575a5f7aecf2e376ee4647
+
+graph init --studio adventure --network sepolia --from-contract 0xfdf38b612aadb51042575a5f7aecf2e376ee4647 --abi=./L1Bridge.json
+
+ ›   Warning: In next major version, this flag will be removed. By default we will deploy to the Graph Studio. Learn more about Sunrise of Decentralized Data
+ ›   https://thegraph.com/blog/unveiling-updated-sunrise-decentralized-data/
+ ›   Warning: In next major version, this flag will be removed. By default we will deploy to the Graph Studio. Learn more about Sunrise of Decentralized Data
+ ›   https://thegraph.com/blog/unveiling-updated-sunrise-decentralized-data/
+ ›   Warning: In next major version, this flag will be removed. By default we will stop initializing a Git repository.
+✔ Protocol · ethereum
+✔ Subgraph slug · monitor-new-deposit-contract
+✔ Directory to create the subgraph in · monitor-new-deposit-contract
+✔ Contract address · 0xfdf38b612aadb51042575a5f7aecf2e376ee4647
+✔ Start Block · 0
+✔ Contract Name · L1Bridge
+✔ Index contract events as entities (Y/n) · true
+  Generate subgraph
+  Write subgraph to directory
+✔ Create subgraph scaffold
+✔ Initialize networks config
+✔ Initialize subgraph repository
+✔ Install dependencies with yarn
+✔ Generate ABI and schema types with yarn codegen
+Add another contract? (y/n):
+
+Next steps:
+
+  1. Run `graph auth` to authenticate with your deploy key.
+
+  2. Type `cd adventure` to enter the subgraph.
+
+  3. Run `yarn deploy` to deploy the subgraph.
+
+Make sure to visit the documentation on https://thegraph.com/docs/ for further information.
+
+-- Find it here https://thegraph.com/studio/subgraph/adventure/
+graph auth --studio 84e15f4e43e585374f3f3562f0f327ca
+
+ ›   Warning: In next major version, this flag will be removed. By default we will deploy to the Graph Studio. Learn more about Sunrise of Decentralized Data
+ ›   https://thegraph.com/blog/unveiling-updated-sunrise-decentralized-data/
+Deploy key set for https://api.studio.thegraph.com/deploy/
+ubuntu@ip-172-31-29-224:~/graph-node$ cd adventure/
+ubuntu@ip-172-31-29-224:~/graph-node/adventure$ yarn deploy
+yarn run v1.22.22
+$ graph deploy --node https://api.studio.thegraph.com/deploy/ adventure
+Which version label to use? (e.g. "v0.0.1"): v0.0.1
+  Skip migration: Bump mapping apiVersion from 0.0.1 to 0.0.2
+  Skip migration: Bump mapping apiVersion from 0.0.2 to 0.0.3
+  Skip migration: Bump mapping apiVersion from 0.0.3 to 0.0.4
+  Skip migration: Bump mapping apiVersion from 0.0.4 to 0.0.5
+  Skip migration: Bump mapping apiVersion from 0.0.5 to 0.0.6
+  Skip migration: Bump manifest specVersion from 0.0.1 to 0.0.2
+  Skip migration: Bump manifest specVersion from 0.0.2 to 0.0.4
+✔ Apply migrations
+✔ Load subgraph from subgraph.yaml
+  Compile data source: L1Bridge => build/L1Bridge/L1Bridge.wasm
+✔ Compile subgraph
+  Copy schema file build/schema.graphql
+  Write subgraph file build/L1Bridge/L1Bridge.json
+  Write subgraph manifest build/subgraph.yaml
+✔ Write compiled subgraph to build/
+  Add file to IPFS build/schema.graphql
+                .. QmRzcQt8Wxu9hjB2hCsjrNAWSgwHMprG4WSeeBgVAqcKxA
+  Add file to IPFS build/L1Bridge/L1Bridge.json
+                .. QmP9x7GHSWFMpinNcauAsrCav8otFPEH8Qy7JU2tXpExSK
+  Add file to IPFS build/L1Bridge/L1Bridge.wasm
+                .. QmYy4A6kuDMa6NrPPrh7oviT48r8pTfZon8gEN4fF8gRkG
+✔ Upload subgraph to IPFS
+
+Build completed: QmSNePAUzQ85MGBaD2BEHiHDLagmcUPvP99ML7Qb57EJ7P
+
+Deployed to https://thegraph.com/studio/subgraph/adventure
+
+Subgraph endpoints:
+Queries (HTTP):     https://api.studio.thegraph.com/query/89398/adventure/v0.0.1
+
+Done in 18.56s.
+
+```
+
 ###  Layer 2 (L2) Configuration
 
 ```
