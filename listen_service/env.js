@@ -25,22 +25,20 @@ const chainConfig = {
   l2_owner_address: process.env.L2_OWNER_ADDRESS,
   l2_owner_private_key: process.env.L2_OWNER_PRIVATE_KEY,
 
-  // Shard1 configuration
-  shard1_name: process.env.SHARD1_NAME,
-  shard1_rpc_url: process.env.SHARD1_RPC_URL,
-  shard1_wss_url: process.env.SHARD1_WSS_URL,
-  shard1_contract_address: process.env.SHARD1_CONTRACT_ADDRESS,
-  l2_to_shard1_contract_address: process.env.L2_TO_SHARD1_CONTRACT_ADDRESS,
-  shard1_owner_address: process.env.SHARD1_OWNER_ADDRESS,
-  shard1_owner_private_key: process.env.SHARD1_OWNER_PRIVATE_KEY,
-
-  // Shard2 configuration
-  shard2_name: process.env.SHARD2_NAME,
-  shard2_contract_address: process.env.SHARD2_CONTRACT_ADDRESS,
-  l2_to_shard2_contract_address: process.env.L2_TO_SHARD2_CONTRACT_ADDRESS,
-  shard2_rpc_url: process.env.SHARD2_RPC_URL,
-  shard2_wss_url: process.env.SHARD2_WSS_URL,
 };
+
+for (let i = 1; i <= 10; i++) {
+  chainConfig[`shard${i}_name`] = process.env[`SHARD${i}_NAME`];
+  if(chainConfig[`shard${i}_name`] == undefined) {
+    break;
+  }
+  chainConfig[`shard${i}_rpc_url`] = process.env[`SHARD${i}_RPC_URL`];
+  chainConfig[`shard${i}_wss_url`] = process.env[`SHARD${i}_WSS_URL`];
+  chainConfig[`shard${i}_contract_address`] = process.env[`SHARD${i}_CONTRACT_ADDRESS`];
+  chainConfig[`l2_to_shard${i}_contract_address`] = process.env[`L2_TO_SHARD${i}_CONTRACT_ADDRESS`];
+  chainConfig[`shard${i}_owner_address`] = process.env[`SHARD${i}_OWNER_ADDRESS`];
+  chainConfig[`shard${i}_owner_private_key`] = process.env[`SHARD${i}_OWNER_PRIVATE_KEY`];
+}
 
 // MySQL configuration
 const dbConfig = {

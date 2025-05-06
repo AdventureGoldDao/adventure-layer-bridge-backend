@@ -14,8 +14,55 @@ const abi = abis.deposit;
 //connect to the blockchain
 const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
 const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
-const shard1 = new BlockchainConfig(chainConfig.shard1_name,chainConfig.shard1_rpc_url,chainConfig.shard1_wss_url);
-//const shard2 = new BlockchainConfig(chainConfig.shard2_name,chainConfig.shard2_rpc_url,chainConfig.shard2_wss_url);
+
+// Initialize shard arrays
+const shards = [];
+const shardContracts = [];
+const l2ToShardContracts = [];
+
+// Dynamically initialize all configured shards
+for (let i = 1; i <= 10; i++) { // for more  change it 
+    const shardName = chainConfig[`shard${i}_name`];
+	if(shardName == undefined) {
+		logger.info(`Shard${i} is not configured`);
+		break;
+	  }
+    const shardRpcUrl = chainConfig[`shard${i}_rpc_url`];
+    const shardWssUrl = chainConfig[`shard${i}_wss_url`];
+    const shardContractAddress = chainConfig[`shard${i}_contract_address`];
+    const l2ToShardContractAddress = chainConfig[`l2_to_shard${i}_contract_address`];
+    const shardOwnerAddress = chainConfig[`shard${i}_owner_address`];
+    const shardOwnerPrivateKey = chainConfig[`shard${i}_owner_private_key`];
+
+    if (shardName && shardRpcUrl && shardWssUrl) {
+        const shard = new BlockchainConfig(shardName, shardRpcUrl, shardWssUrl);
+        shards.push({ index: i, config: shard });
+
+        if (shardContractAddress && l2ToShardContractAddress) {
+            const shardContract = new ContractConfig(
+                shardContractAddress,
+                shard,
+                shardOwnerAddress,
+                shardOwnerPrivateKey,
+                abi
+            );
+            const l2ToShardContract = new ContractConfig(
+                l2ToShardContractAddress,
+                l2,
+                chainConfig.l2_owner_address,
+                chainConfig.l2_owner_private_key,
+                abi
+            );
+            shardContracts.push({ index: i, contract: shardContract });
+            l2ToShardContracts.push({ index: i, contract: l2ToShardContract });
+            logger.info(`Shard${i} and its contracts are configured`);
+        } else {
+            logger.info(`Shard${i} contracts are not configured`);
+        }
+    } else {
+        logger.info(`Shard${i} is not configured`);
+    }
+}
 
 //connect to the contract
 const l1_contract = new ContractConfig(
@@ -32,41 +79,18 @@ const l2_contract = new ContractConfig(
     chainConfig.l2_owner_private_key,
     abi
 );
-const l2_to_shard1_contract = new ContractConfig(
-    chainConfig.l2_to_shard1_contract_address,
-    l2,
-    chainConfig.l2_owner_address,
-    chainConfig.l2_owner_private_key,
-    abi
-);
-// const l2_to_shard2_contract = new ContractConfig(
-//     chainConfig.l2_to_shard2_contract_address,
-//     l2,
-//     chainConfig.l2_owner_address,
-//     chainConfig.l2_owner_private_key,
-//     abi
-// );
-const shard1_contract = new ContractConfig(
-    chainConfig.shard1_contract_address,
-    shard1,
-    chainConfig.shard1_owner_address,
-    chainConfig.shard1_owner_private_key,
-    abi
-);
-// const shard2_contract = new ContractConfig(
-//     chainConfig.shard2_contract_address,
-//     shard2,
-//     chainConfig.shard2_owner_address,
-//     chainConfig.shard2_owner_private_key,
-//     abi
-// );
+
 const routes = new Map();
 routes.set('L2->L1', new Route(l2_contract, l1_contract));
-routes.set('shard1->L2', new Route(shard1_contract, l2_to_shard1_contract));
-routes.set('L2->shard1', new Route(l2_to_shard1_contract, shard1_contract));
-//routes.set('shard2->L2', new Route(shard2_contract, l2_to_shard2_contract));
-//routes.set('L2->shard2', new Route(l2_to_shard2_contract, shard2_contract));
 
+// for shard add route
+shardContracts.forEach(({ index, contract: shardContract }) => {
+    const l2ToShardContract = l2ToShardContracts.find(c => c.index === index)?.contract;
+    if (l2ToShardContract) {
+        routes.set(`shard${index}->L2`, new Route(shardContract, l2ToShardContract));
+        routes.set(`L2->shard${index}`, new Route(l2ToShardContract, shardContract));
+    }
+});
 
 logger.info('chainConfig.owner(L1) ' + l1_contract.owner_address);
 logger.info(`chainConfig.owner(L2&shard): ${l2_contract.owner_address}`);
