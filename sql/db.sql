@@ -1,15 +1,16 @@
 -- Create a new database named 'agld' with UTF-8 character set and collation
-CREATE DATABASE agld CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS agld   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+USE agld;
 -- Create a table 'last_ids' in the 'agld' database to store the last processed IDs
-CREATE TABLE agld.last_ids (
+CREATE TABLE IF NOT EXISTS last_ids (
     name VARCHAR(255) NOT NULL,  -- Name of the process or transaction type
     last_id BIGINT NOT NULL,     -- Last processed ID for the given name
     PRIMARY KEY (name)           -- Primary key on 'name' to ensure uniqueness
 );
 
 -- Create a table 'transactions' to store transaction details
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each transaction
     name VARCHAR(255) NOT NULL,         -- Name associated with the transaction
     address VARCHAR(255) NOT NULL,      -- Address involved in the transaction
@@ -22,7 +23,7 @@ CREATE TABLE transactions (
 );
 
 -- Insert initial data into 'last_ids' table
-insert into agld.last_ids (name, last_id) values ('L1->L2', 6914317);
-insert into agld.last_ids (name, last_id) values ('L2->L1', 515700);
-insert into agld.last_ids (name, last_id) values ('shard1->L2', 30228);
-insert into agld.last_ids (name, last_id) values ('L2->shard1', 536111); 
+insert into last_ids (name, last_id) values ('L1->L2', 0);
+insert into last_ids (name, last_id) values ('L2->L1', 0);
+insert into last_ids (name, last_id) values ('shard1->L2', 0);
+insert into last_ids (name, last_id) values ('L2->shard1', 0); 

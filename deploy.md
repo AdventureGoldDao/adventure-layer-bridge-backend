@@ -166,10 +166,11 @@ SHARD1_OWNER_PRIVATE_KEY=  # Owner's private key
 
 ```
 # Example
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=yourpassword
-DB_NAME=yourdatabase
+MYSQL_HOST=localhost
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=yourpassword
+MYSQL_DATABASE=yourdatabase
 ```
 
 Make sure to update these variables according to your database configuration.
