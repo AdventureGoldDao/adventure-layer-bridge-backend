@@ -36,6 +36,8 @@ class Route {
 		this.from = from;
 		// Destination point of the route
 		this.to = to;
+
+		this.times = 0;
 	}
 }
 

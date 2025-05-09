@@ -19,8 +19,32 @@ CREATE TABLE IF NOT EXISTS transactions (
     transaction_hash VARCHAR(255) NOT NULL,  -- Unique hash of the transaction
     block_timestamp DATETIME NOT NULL,  -- Timestamp of the block containing the transaction
     timestamp DATETIME NOT NULL,        -- Timestamp of the transaction itself
-    UNIQUE (name, address, block_number) -- Ensure uniqueness for combination of name, address, and block number
+    status ENUM('INIT', 'SUCCESS', 'FAIL') NOT NULL DEFAULT 'INIT', -- Status of the transaction
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Update timestamp
+    UNIQUE (name, address, block_number, transaction_hash) -- Ensure uniqueness for combination of name, address, and block number
 );
+
+-- Create a table 'retry_transactions' to store retry transaction details
+CREATE TABLE IF NOT EXISTS retry_transactions (
+    id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each retry transaction
+    name VARCHAR(255) NOT NULL,         -- Name associated with the retry transaction   
+    address VARCHAR(255) NOT NULL,      -- Address involved in the retry transaction
+    block_number BIGINT NOT NULL,       -- Block number in which the retry transaction is included
+    transaction_hash VARCHAR(255) NOT NULL,  -- Unique hash of the retry transaction
+    retry_timestamp DATETIME NOT NULL,  -- Timestamp of the retry transaction
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP-- Update timestamp
+
+
+
+CREATE TABLE IF NOT EXISTS distributed_locks (
+    lock_name VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (lock_name),
+    INDEX idx_expires_at (expires_at)
+) ENGINE=InnoDB; 
 
 -- Insert initial data into 'last_ids' table
 insert into last_ids (name, last_id) values ('L1->L2', 0);

@@ -11,6 +11,45 @@ const logger = require('./log_utils');
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
 
+function sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function maskPrivateKey(privateKey) {
+    if (privateKey.length <= 8) {
+        return privateKey;
+    }
+    const start = privateKey.slice(0, 4);
+    const end = privateKey.slice(-4);
+    const masked = '*'.repeat(privateKey.length - 8);
+    return `${start}${masked}${end}`;
+}
+
+function printChainConfig() {
+	logger.info('L1 name ' + chainConfig.l1_name);
+	logger.info('L1 contract Address ' + chainConfig.l1_contract_address);
+    logger.info(`L1 Owner Address: ${chainConfig.l1_owner_address}`);
+    logger.info(`L1 Owner Private Key: ${maskPrivateKey(chainConfig.l1_owner_private_key)}`);
+	
+	logger.info('L2 name ' + chainConfig.l2_name);
+    logger.info('L2 contract Address ' + chainConfig.l2_contract_address);
+    logger.info(`L2 Owner Address: ${chainConfig.l2_owner_address}`);
+    logger.info(`L2 Owner Private Key: ${maskPrivateKey(chainConfig.l2_owner_private_key)}`);
+
+    for (let i = 1; i <= 10; i++) {
+        const shardName = chainConfig[`shard${i}_name`];
+        if (shardName == undefined) {
+			break;
+        }
+		logger.info('Shard${i} name ' + shardName);
+		logger.info('Shard${i} contract Address ' + chainConfig[`shard${i}_contract_address`]);
+        logger.info(`Shard${i} Owner Address: ${chainConfig[`shard${i}_owner_address`]}`);
+        logger.info(`Shard${i} Owner Private Key: ${maskPrivateKey(chainConfig[`shard${i}_owner_private_key`])}`);
+    }
+}
+
+printChainConfig();
+
 //connect to the blockchain
 const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
 const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
@@ -63,6 +102,9 @@ for (let i = 1; i <= 10; i++) { // for more  change it
         logger.info(`Shard${i} is not configured`);
     }
 }
+
+
+
 
 //connect to the contract
 const l1_contract = new ContractConfig(
@@ -203,147 +245,249 @@ async function do_transaction(to, recipient, amount) {
 
 function listen_deposit_events() {
 	logger.info('listen_deposit_events start');
+	let lock = false;
 	setInterval(() => {
-		if(chainConfig.l1_graph_query_use == 'true'){
-			//use graph sql to query the latest deposit events
-			fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
-		}else{
-			//use rpc to query the latest deposit events
-			fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
-		}
-	}, 5000);
-
-	for (const [name, route] of routes) {
-		setInterval(() => {
-			fetch_deposit_event_by_rpc(name, route );
-		}, 5000);
-	}
-
-}
-
-
-
-async function fetch_deposit_event_by_graph_sql(name, to_contract) {
-//   const grquery = `
-//   {
-//     deposits(orderBy: blockTimestamp, orderDirection: desc, first: 1) {
-//       id
-//       sender
-//       amount
-//       blockNumber
-//       blockTimestamp
-// 	  transactionHash
-//     }
-//   }
-//   `;
-  try {
-		logger.info('Connected to MySQL');
-		var last_id = 0;
-		const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
-		if (rows.length > 0) {
-			last_id = rows[0].last_id;
-			logger.info(`Last ID for ${name}: ${last_id}`);
-		} else {
-			logger.error(`No last ID found for ${name}`);
+		if(lock){
 			return;
 		}
-
-
-		const grquery = `
-		{
-		  deposits(
-			orderBy: blockNumber,   
-			orderDirection: asc, 
-			first: 1, 
-			where: { blockNumber_gt: ${last_id} }
-		  ) {
-			id
-			sender
-			amount
-			blockNumber
-			blockTimestamp
-			transactionHash
-		  }
-		}
-		`;
-		
-		logger.info('fetch_deposit_event_by_graph_sql query data:', JSON.stringify({ grquery }));
-		const response = await fetch(chainConfig.l1_graph_query_url, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ query :grquery })
-		});
-	
-		const data = await response.json()
-		logger.info('fetch_deposit_event_by_graph_sql result data:', JSON.stringify(data));
-		if(data.data && data.data.deposits && data.data.deposits[0]){
-			for (const elem of data.data.deposits) {
-				let blockNumber = elem.blockNumber;
-				if(blockNumber > last_id){
-					let transaction_hash = elem.transactionHash;
-					const queue_data = {
-						contract: to_contract,
-						address: elem.sender,
-						amount: elem.amount,
-					}
-					//check if the transaction already exists
-					const existingTransaction = await DBUtils.query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${elem.blockNumber}`);
-					if (existingTransaction.length > 0) {
-						logger.error(`Transaction already exists for ${name}, ${queue_data.address}, block ${elem.blockNumber}. Skipping.`);
-						return ;
-					}
-
-					//do transaction
-					const result = await do_transaction(
-						queue_data.contract,
-						queue_data.address,
-						queue_data.amount,
-					);
-					if(!result){
-						logger.error(`Transaction failed for ${name}, ${queue_data.address}, block ${blockNumber}. Skipping.`);
-						return;
-					}
-
-					//insert transaction record
-					const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-					const block_timestamp = new Date(elem.blockTimestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
-
-					await DBUtils.query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}', '${timestamp}', '${block_timestamp}')`);
-					logger.info('Transaction record inserted:', queue_data.address, queue_data.amount, blockNumber, timestamp);
-
-					last_id = blockNumber;
-
-					await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
-					logger.info('update last_id:', last_id);
-				}
-				else {
-					logger.info('fetch_deposit_event_by_graph_sql skip data:', JSON.stringify(elem), elem.id);
-				}
+		lock = true;
+		try {
+			if(chainConfig.l1_graph_query_use == 'true'){
+				//use graph sql to query the latest deposit events
+				fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
+			}else{
+				//use rpc to query the latest deposit events
+				fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
 			}
-			
+			for (const [name, route] of routes) {
+				fetch_deposit_event_by_rpc(name, route );
+			}
+		} catch (error) {
+			logger.error('Error in listen_deposit_events interval:', error);
+		} finally {
+			lock = false;
 		}
-
-
-	}
-	catch(err){
-		logger.error('fetch_deposit_event_by_graph_sql Error:', err);
-	}
+	}, 5000);
 }
 
 
-//query the latest deposit events by rpc
-async function fetch_deposit_event_by_rpc(name, route) {
-    try {
-        //logger.info('Connected to MySQL');
 
+// add distributed lock related functions
+async function acquireLock(lockName, timeout = 600) {
+    try {
+        // logger.info(`acquireLock ${lockName}`);
+        // update lock record 
+        const result = await DBUtils.query(
+            `INSERT INTO distributed_locks (lock_name, expires_at) 
+             VALUES (?, DATE_ADD(NOW(), INTERVAL ? SECOND))`,
+            [lockName, timeout, timeout]
+        );
+        
+		return true;
+
+    } catch (error) {
+
+        // check if the lock is valid
+        const lock = await DBUtils.query(
+            'SELECT * FROM distributed_locks WHERE lock_name = ? AND expires_at < NOW()',
+            [lockName]
+        );
+        
+		if(lock.length > 0){
+			logger.info(`acquiring lock: with timeout true`);
+
+			await DBUtils.query(
+			    `UPDATE distributed_locks 
+			     SET expires_at = DATE_ADD(NOW(), INTERVAL ? SECOND) 
+			     WHERE lock_name = ?`,
+			    [timeout, lockName]
+			);
+
+			return true;
+		}
+
+        // logger.info(' acquiring lock: false');
+        return false;
+    }
+}
+
+async function releaseLock(lockName) {
+    try {
+        // logger.info(`releaseLock ${lockName}`);
+        await DBUtils.query(
+            'DELETE FROM distributed_locks WHERE lock_name = ?',
+            [lockName]
+        );
+    } catch (error) {
+        logger.error('Error releasing lock:', error);
+    }
+}
+
+async function fetch_deposit_event_by_graph_sql(name, to_contract) {
+    const lockName = `${name}`;
+	// try to acquire lock
+	const hasLock = await acquireLock(lockName);
+	if (!hasLock) {
+		logger.info(`Another instance is processing ${name} graph events`);
+		return;
+	}
+    try {
+        // get last_id
+        logger.info('Connected to MySQL');
+        var last_id = 0;
         const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
-		var last_id = 0;
         if (rows.length > 0) {
             last_id = rows[0].last_id;
             logger.info(`Last ID for ${name}: ${last_id}`);
         } else {
             logger.error(`No last ID found for ${name}`);
-			return;
+            return;
+        }
+
+
+        const grquery = `
+        {
+          deposits(
+            orderBy: blockNumber,   
+            orderDirection: asc, 
+            first: 1, 
+            where: { blockNumber_gt: ${last_id} }
+          ) {
+            id
+            sender
+            amount
+            blockNumber
+            blockTimestamp
+            transactionHash
+          }
+        }
+        `;
+        
+        logger.info('fetch_deposit_event_by_graph_sql query data:', JSON.stringify({ grquery }));
+        const response = await fetch(chainConfig.l1_graph_query_url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query :grquery })
+        });
+    
+        const data = await response.json()
+        logger.info('fetch_deposit_event_by_graph_sql result data:', JSON.stringify(data));
+        if(data.data && data.data.deposits && data.data.deposits[0]){
+            for (const elem of data.data.deposits) {
+                let blockNumber = elem.blockNumber;
+                if(blockNumber > last_id){
+                    let transaction_hash = elem.transactionHash;
+                    const queue_data = {
+                        contract: to_contract,
+                        address: elem.sender,
+                        amount: elem.amount,
+                    }
+                    //check if the transaction already exists
+                    const existingTransaction = await DBUtils.query(
+                        `SELECT * FROM transactions 
+                         WHERE name = ? 
+                         AND address = ? 
+                         AND block_number = ? 
+                         AND transaction_hash = ?`,
+                        [name, queue_data.address, blockNumber, transaction_hash]
+                    );
+					let retry_transaction = false;
+                    if (existingTransaction.length > 0) {
+						const existingStatus = existingTransaction[0].status;
+						if(existingStatus === 'INIT'){
+							logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
+							// record retry transaction
+							await DBUtils.query(
+								`INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
+								 VALUES (?, ?, ?, ?, ?)`,
+								[name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
+							);
+							retry_transaction = true;
+						}else{
+							logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
+							continue;
+						}
+                    }
+					if(!retry_transaction){
+						//insert transaction record with INIT status
+						const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+						const block_timestamp = new Date(elem.blockTimestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+						await DBUtils.query(
+							`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
+							VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
+							[name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
+						);
+						logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
+					}
+
+                    //do transaction
+                    const result = await do_transaction(
+                        queue_data.contract,
+                        queue_data.address,
+                        queue_data.amount,
+                    );
+
+                    //update transaction status
+                    if(result) {
+                        await DBUtils.query(
+                            `UPDATE transactions SET status = 'SUCCESS' WHERE name = ? AND address = ? AND block_number = ?`,
+                            [name, queue_data.address, blockNumber]
+                        );
+                        logger.info('Transaction status updated to SUCCESS:', queue_data.address, queue_data.amount, blockNumber);
+                    } else {
+                        await DBUtils.query(
+                            `UPDATE transactions SET status = 'FAIL' WHERE name = ? AND address = ? AND block_number = ?`,
+                            [name, queue_data.address, blockNumber]
+                        );
+                        logger.error('Transaction status updated to FAIL:', queue_data.address, queue_data.amount, blockNumber);
+                        return;
+                    }
+
+                    last_id = blockNumber;
+
+                    await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
+                    logger.info('update last_id:', last_id);
+                }
+                else {
+                    logger.info('fetch_deposit_event_by_graph_sql skip data:', JSON.stringify(elem), elem.id);
+                }
+            }
+            
+        }
+
+
+    }
+    catch(err){
+        logger.error('fetch_deposit_event_by_graph_sql Error:', err);
+    } finally {
+        // release lock
+        await releaseLock(lockName);
+    }
+}
+
+async function fetch_deposit_event_by_rpc(name, route) {
+    const lockName = `${name}`;
+	route.times++;
+	// try to acquire lock
+	const hasLock = await acquireLock(lockName);
+	logger.info(`fetch_deposit_event_by_rpc ${name} ${route.times} ${hasLock}`);
+
+	if (!hasLock) {
+		logger.info(`Another instance is processing ${name}  ${route.times} events`);
+		return;
+	}
+    try {
+
+		logger.info(`start ${name} ${route.times} ${hasLock}`);
+        // original processing logic
+        const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
+        var last_id = 0;
+        if (rows.length > 0) {
+            last_id = rows[0].last_id;
+            logger.info(`Last ID for ${name}: ${last_id}`);
+        } else {
+            logger.error(`No last ID found for ${name}`);
+            return;
         }
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
@@ -376,42 +520,90 @@ async function fetch_deposit_event_by_rpc(name, route) {
                 logger.info(queue_data);
                 logger.info('fetch_deposit_event_by_rpc add to queue:', queue_data.contract, queue_data.address, queue_data.amount, blockNumber);
 				//check if the transaction already exists
-				const existingTransaction = await DBUtils.query(`SELECT * FROM transactions WHERE name = '${name}' AND address = '${queue_data.address}' AND block_number = ${blockNumber}`);
-                if (existingTransaction.length > 0) {
-                    logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}. Skipping.`);
-                    continue;
-                }
-				//do transaction
-				const result = await do_transaction(
-					queue_data.contract,
-					queue_data.address,
-					queue_data.amount,
+				const existingTransaction = await DBUtils.query(
+					`SELECT * FROM transactions 
+					 WHERE name = ? 
+					 AND address = ? 
+					 AND block_number = ? 
+					 AND transaction_hash = ?`,
+					[name, queue_data.address, blockNumber, transaction_hash]
 				);
-				if(!result){
-					logger.error(`Transaction failed for ${name}, ${queue_data.address}, block ${blockNumber}. Skipping.`);
-					return;
+				let retry_transaction = false;
+				if (existingTransaction.length > 0) {
+					const existingStatus = existingTransaction[0].status;
+					if (existingStatus === 'INIT') {
+						logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
+						// record retry transaction
+						await DBUtils.query(
+							`INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
+							 VALUES (?, ?, ?, ?, ?)`,
+							[name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
+						);
+						retry_transaction = true;
+					} else {
+						logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
+						continue;
+					}
 				}
-				//insert transaction record
-				const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-				const block_timestamp = timestamp; 
-				await DBUtils.query(`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp) VALUES ('${name}', '${queue_data.address}', '${queue_data.amount}', ${blockNumber}, '${transaction_hash}', '${timestamp}', '${block_timestamp}')`);
-				logger.info('Transaction record inserted:', queue_data.address, queue_data.amount, blockNumber, timestamp);
-				//update last_id
-				last_id = blockNumber;
-				await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
+
+				if(!retry_transaction){
+					//insert transaction record with INIT status
+					const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+					const block_timestamp = timestamp;
+					await DBUtils.query(
+						`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
+						VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
+						[name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
+					);
+					logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
+				}
+
+                //do transaction
+                const result = await do_transaction(
+                    queue_data.contract,
+                    queue_data.address,
+                    queue_data.amount,
+                );
+
+                //update transaction status
+                if(result) {
+                    await DBUtils.query(
+                        `UPDATE transactions SET status = 'SUCCESS' WHERE name = ? AND address = ? AND block_number = ?`,
+                        [name, queue_data.address, blockNumber]
+                    );
+                    logger.info('Transaction status updated to SUCCESS:', queue_data.address, queue_data.amount, blockNumber);
+                } else {
+                    await DBUtils.query(
+                        `UPDATE transactions SET status = 'FAIL' WHERE name = ? AND address = ? AND block_number = ?`,
+                        [name, queue_data.address, blockNumber]
+                    );
+                    logger.error('Transaction status updated to FAIL:', queue_data.address, queue_data.amount, blockNumber);
+                    return;
+                }
+
+                //update last_id
+                last_id = blockNumber;
+                await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
                 logger.info('update last_id:', last_id);
             }
         };
 		
     } catch (err) {
         logger.error('fetch_deposit_event_by_rpc Error:', err);
+    } finally {
+        // release lock
+		logger.info(`releaseLock ${lockName} ${route.times}`);
+        await releaseLock(lockName);
     }
 }
 
 
 
 
+
+
+
+
 module.exports = {
-	do_transaction,
 	listen_deposit_events
 };
