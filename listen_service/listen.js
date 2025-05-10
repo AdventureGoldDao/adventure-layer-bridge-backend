@@ -10,6 +10,7 @@ const DBUtils = require('./db_utils');
 const logger = require('./log_utils');
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
+const l1_abi = abis.l1;
 
 function sleep(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -112,7 +113,7 @@ const l1_contract = new ContractConfig(
     l1,
     chainConfig.l1_owner_address,
     chainConfig.l1_owner_private_key,
-    abi
+    l1_abi
 );
 const l2_contract = new ContractConfig(
     chainConfig.l2_contract_address,
@@ -213,15 +214,16 @@ async function do_transaction(to, recipient, amount, transactionId) {
 
 		}
 		else {
-
+            //w3.utils.toWei(amountToSend, 'ether')
 			transactionObject = {
 				from: senderAddress,
 				to: recipientAddress,
-				value: amountToSend,//w3.utils.toWei(amountToSend, 'ether'),
+				value: amountToSend.toString(), // 确保 BigInt 转换为字符串
 				gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
 				gas: gasLimit,
 			}
 
+            logger.info(`transactionObject: ${JSON.stringify(transactionObject)}`);
 		}
 
 
@@ -252,8 +254,6 @@ async function do_transaction(to, recipient, amount, transactionId) {
 		);
 
 
-		
-
 		if (existingFlow.length > 0) {
             // if the transaction already exists
 			logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status}`);
@@ -266,19 +266,36 @@ async function do_transaction(to, recipient, amount, transactionId) {
                     // logger.info(`Transaction receipt: ${JSON.stringify(receipt, (key, value) =>
                     //     typeof value === 'bigint' ? value.toString() : value
                     // )}`);
-                    if (receipt && receipt.status) {
+                    
+                    // check if the transaction is still pending
+                    if (!receipt) {
+                        logger.info(`Transaction ${existingFlow[0].transaction_hash} is still pending.`);
+                        return false; // return false to let the caller know the transaction is still pending
+                    }
+
+                    if (receipt.status) {
                         logger.info(`Transaction ${existingFlow[0].transaction_hash} confirmed as SUCCESS on chain.`);
-                        await DBUtils.query(
-                            `UPDATE transaction_flow SET status = 'SUCCESS' WHERE transaction_hash = ?`,
-                            [existingFlow[0].transaction_hash]
+                        
+                        const updateResult = await DBUtils.query(
+                            `UPDATE transaction_flow SET status = 'SUCCESS' WHERE id = ?`,
+                            [existingFlow[0].id]
                         );
+                        if (updateResult.affectedRows === 0) {
+                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow[0].id}`);
+                            return false;
+                        }
+                    
                         return true;
                     } else {
                         logger.error(`Transaction ${existingFlow[0].transaction_hash} confirmed as FAIL on chain.`);
-                        await DBUtils.query(
-                            `UPDATE transaction_flow SET status = 'FAIL' WHERE transaction_hash = ?`,
-                            [existingFlow[0].transaction_hash]
+                        const updateResult = await DBUtils.query(
+                            `UPDATE transaction_flow SET status = 'FAIL' WHERE id = ?`,
+                            [existingFlow[0].id]
                         );
+                        if (updateResult.affectedRows === 0) {
+                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow[0].id}`);
+                            return false;
+                        }
                         return false;
                     }
                 } catch(err){
@@ -313,7 +330,12 @@ async function do_transaction(to, recipient, amount, transactionId) {
 			})
 			.on('receipt', receipt => {
 				status = 'SUCCESS';
-				logger.info(`${net_name} Transaction Receipt: ${JSON.stringify(receipt)}`);
+				//  this print receipt will make the whole transaction failed, be careful
+				// const safeReceipt = JSON.parse(JSON.stringify(receipt, (key, value) =>
+				// 	typeof value === 'bigint' ? value.toString() : value
+				// ));
+                //logger.info(`${net_name} Transaction Receipt ${JSON.stringify(safeReceipt)}`);
+				logger.info(`${net_name} Transaction Receipt`);
 				// update transaction status to success
 				DBUtils.query(
 					`UPDATE transaction_flow SET status = ? WHERE id = ?`,
@@ -463,8 +485,8 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
           deposits(
             orderBy: blockNumber,   
             orderDirection: asc, 
-            first: 1, 
-            where: { blockNumber_gt: ${last_id} }
+            first: 200, 
+            where: { blockNumber_gte: ${last_id} }
           ) {
             id
             sender
@@ -532,35 +554,36 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                         );
                         logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
                     }
+                    let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
                     //do transaction
                     const result = await do_transaction(
                         queue_data.contract,
                         queue_data.address,
                         queue_data.amount,
-                        existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id)
+                        transaction_id
                     );
 
                     //update transaction status
                     if(result) {
                         await DBUtils.query(
-                            `UPDATE transactions SET status = 'SUCCESS' WHERE name = ? AND address = ? AND block_number = ?`,
-                            [name, queue_data.address, blockNumber]
+                            `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
+                            [transaction_id]
                         );
-                        logger.info('Transaction status updated to SUCCESS:', queue_data.address, queue_data.amount, blockNumber);
+                        logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
                     } else {
                         await DBUtils.query(
-                            `UPDATE transactions SET status = 'FAIL' WHERE name = ? AND address = ? AND block_number = ?`,
-                            [name, queue_data.address, blockNumber]
+                            `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
+                            [transaction_id]
                         );
-                        logger.error('Transaction status updated to FAIL:', queue_data.address, queue_data.amount, blockNumber);
+                        logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
                         return;
                     }
 
                     last_id = blockNumber;
                     await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
-                    logger.info('update last_id:', last_id);
+                    logger.info(`update last_id: ${last_id}`);
                 } else {
-                    logger.info('fetch_deposit_event_by_graph_sql skip data:', JSON.stringify(elem), elem.id);
+                    logger.info(`fetch_deposit_event_by_graph_sql skip data: ${JSON.stringify(elem)}, ${elem.id}`);
                 }
             }
         }
@@ -601,22 +624,24 @@ async function fetch_deposit_event_by_rpc(name, route) {
         }
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
-        const fromBlock = last_id + 1; // start from last block number
+        const fromBlock = last_id ; // start from last block number
         logger.info(`fetch_deposit_event_by_rpc query data: ${name}, ${fromBlock}, ${latestBlock}`);
 
 		if(fromBlock > latestBlock){
-			latestBlock = fromBlock+1;
+            logger.info(`fetch_deposit_event_by_rpc skip data: ${name}, ${fromBlock}, ${latestBlock}`);
 			return;
 		}
 
         // query all deposit events from fromBlock to latestBlock
         const events = await route.from.contract.getPastEvents('Deposit', {
-            fromBlock: fromBlock,
-            toBlock: latestBlock
+            fromBlock: fromBlock-1,
+            toBlock: 'latest'
         });
 
+        logger.info(`fetch_deposit_event_by_rpc events data: ${name}, ${events.length}`);
+
         for (const event of events) {
-            const { sender, amount } = event.returnValues;
+            const { sender, user ,amount } = event.returnValues;
             const blockNumber = event.blockNumber;
 			let transaction_hash = event.transactionHash;
 
@@ -624,7 +649,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
 				let to  =  route.to;
                 const queue_data = {
                     contract: to,
-                    address: sender,
+                    address: sender || user,
                     amount: amount.toString(),
                 };
                 logger.info(`fetch_deposit_event_by_rpc add to queue:' ${queue_data.address} ${queue_data.amount} ${blockNumber}`);
@@ -667,34 +692,35 @@ async function fetch_deposit_event_by_rpc(name, route) {
 					logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
 				}
 
+                let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
                 //do transaction
                 const result = await do_transaction(
                     queue_data.contract,
                     queue_data.address,
                     queue_data.amount,
-                     existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id)
+                    transaction_id
                 );
 
                 //update transaction status
                 if(result) {
                     await DBUtils.query(
-                        `UPDATE transactions SET status = 'SUCCESS' WHERE name = ? AND address = ? AND block_number = ?`,
-                        [name, queue_data.address, blockNumber]
+                        `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
+                        [transaction_id]
                     );
-                    logger.info('Transaction status updated to SUCCESS:', queue_data.address, queue_data.amount, blockNumber);
+                    logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
                 } else {
                     await DBUtils.query(
-                        `UPDATE transactions SET status = 'FAIL' WHERE name = ? AND address = ? AND block_number = ?`,
-                        [name, queue_data.address, blockNumber]
+                        `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
+                        [transaction_id]
                     );
-                    logger.error('Transaction status updated to FAIL:', queue_data.address, queue_data.amount, blockNumber);
+                    logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
                     return;
                 }
 
                 //update last_id
                 last_id = blockNumber;
                 await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
-                logger.info('update last_id:', last_id);
+                logger.info(`update last_id: ${last_id}`);
             }
         };
 		
