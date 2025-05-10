@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS retry_transactions (
     retry_timestamp DATETIME NOT NULL,  -- Timestamp of the retry transaction
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP-- Update timestamp
-
+);
 
 
 CREATE TABLE IF NOT EXISTS distributed_locks (
@@ -45,6 +45,26 @@ CREATE TABLE IF NOT EXISTS distributed_locks (
     PRIMARY KEY (lock_name),
     INDEX idx_expires_at (expires_at)
 ) ENGINE=InnoDB; 
+
+
+
+-- Create a table 'transaction_flow' to store detailed transaction flow information
+CREATE TABLE IF NOT EXISTS transaction_flow (
+    id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each flow record
+    transaction_id INT NOT NULL,        -- Reference to the parent transaction
+    from_chain VARCHAR(255) NOT NULL,   -- Source chain name
+    to_chain VARCHAR(255) NOT NULL,     -- Destination chain name
+    from_address VARCHAR(255) NOT NULL, -- Sender address
+    to_address VARCHAR(255) NOT NULL,   -- Recipient address
+    amount DECIMAL(38, 0) NOT NULL,     -- Transaction amount
+    gas_price VARCHAR(255),             -- Gas price used
+    gas_limit BIGINT,                   -- Gas limit used
+    transaction_hash VARCHAR(255),      -- Transaction hash
+    status ENUM('INIT', 'SUCCESS', 'FAIL') NOT NULL DEFAULT 'INIT', -- Status of the transaction
+    error_message TEXT,                 -- Error message if any
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Update timestamp
+); 
 
 -- Insert initial data into 'last_ids' table
 insert into last_ids (name, last_id) values ('L1->L2', 0);

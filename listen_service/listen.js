@@ -140,9 +140,11 @@ logger.info(`chainConfig.mock_transactions: ${chainConfig.mock_transactions}`);
 logger.info(`chainConfig.l1_graph_query_use: ${chainConfig.l1_graph_query_use}`);
 
 
-async function do_transaction(to, recipient, amount) {
-
-	if(chainConfig.mock_transactions){
+async function do_transaction(to, recipient, amount, transactionId) {
+    if (!to || !recipient || !amount || !transactionId) {
+        throw new Error(`Missing required parameters ${to}, ${recipient}, ${amount}, ${transactionId}`);
+    }
+	if(chainConfig.mock_transactions == 'true'){
 		logger.info('mock_transactions is true');
 		return true;
 	}
@@ -150,7 +152,7 @@ async function do_transaction(to, recipient, amount) {
 	// Sender's account address and private key
 	const senderAddress = to.owner_address;
 	const senderPrivateKey = to.owner_private_key;
-	logger.info(to.chainConfig.name, 'call do_transaction', senderAddress, recipient, amount);
+	logger.info(`${to.chainConfig.name} call do_transaction ${senderAddress} ${recipient} ${amount}`);
 	let rpc_web3 = to.chainConfig.rpcWb3;
 	let net_name = to.chainConfig.name;
 
@@ -164,8 +166,11 @@ async function do_transaction(to, recipient, amount) {
 	// Sign the transaction with sender's private key and send it
 
 	let transactionObject = {};
-	try {
+	let transactionHash = '';
+	let errorMessage = '';
+	let status = 'INIT';
 
+	try {
 		if (to.chainConfig.name == chainConfig.l1_name) {
 			// current block
 			const block = await rpc_web3.eth.getBlock('latest');
@@ -202,8 +207,8 @@ async function do_transaction(to, recipient, amount) {
 				maxFeePerGas: maxFeePerGas.toString(),
 				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
 			};
-			logger.info("Nonce type:", typeof transactionObject.nonce);  
-                        logger.info("Gas type:", typeof transactionObject.gas);     
+			//logger.info("Nonce type:", typeof transactionObject.nonce);  
+            //logger.info("Gas type:", typeof transactionObject.gas);     
 
 
 		}
@@ -220,24 +225,133 @@ async function do_transaction(to, recipient, amount) {
 		}
 
 
-		logger.info(net_name, 'begin Transaction:', JSON.stringify(transactionObject));
+
+		// record transaction flow
+		const flowData = {
+			transaction_id: transactionId,
+			from_chain: to.chainConfig.name,
+			to_chain: to.chainConfig.name,
+			from_address: senderAddress,
+			to_address: recipientAddress,
+			amount: amountToSend,
+			gas_price: transactionObject.gasPrice || `${transactionObject.maxFeePerGas}/${transactionObject.maxPriorityFeePerGas}`,
+			gas_limit: gasLimit,
+			status: 'INIT'
+		};
+
+		// query transaction_flow table to check if the transaction already exists
+		const existingFlow = await DBUtils.query(
+			`SELECT * FROM transaction_flow 
+			WHERE transaction_id = ? 
+			AND from_chain = ? 
+			AND to_chain = ? 
+			AND from_address = ? 
+			AND to_address = ? 
+			AND amount = ?`,
+			[flowData.transaction_id, flowData.from_chain, flowData.to_chain, flowData.from_address, flowData.to_address, flowData.amount]
+		);
+
+
+		
+
+		if (existingFlow.length > 0) {
+            // if the transaction already exists
+			logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status}`);
+			
+            if(flowData.status == 'INIT'){
+                logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status} start query `);
+                // if the transaction is in INIT status, update the status to SUCCESS
+                try{
+                    const receipt = await rpc_web3.eth.getTransactionReceipt(existingFlow[0].transaction_hash);
+                    // logger.info(`Transaction receipt: ${JSON.stringify(receipt, (key, value) =>
+                    //     typeof value === 'bigint' ? value.toString() : value
+                    // )}`);
+                    if (receipt && receipt.status) {
+                        logger.info(`Transaction ${existingFlow[0].transaction_hash} confirmed as SUCCESS on chain.`);
+                        await DBUtils.query(
+                            `UPDATE transaction_flow SET status = 'SUCCESS' WHERE transaction_hash = ?`,
+                            [existingFlow[0].transaction_hash]
+                        );
+                        return true;
+                    } else {
+                        logger.error(`Transaction ${existingFlow[0].transaction_hash} confirmed as FAIL on chain.`);
+                        await DBUtils.query(
+                            `UPDATE transaction_flow SET status = 'FAIL' WHERE transaction_hash = ?`,
+                            [existingFlow[0].transaction_hash]
+                        );
+                        return false;
+                    }
+                } catch(err){
+                    logger.error(`Transaction ${existingFlow[0].transaction_hash} query error: ${err.message}`);
+                }
+            }
+
+            console.log(`transaction_flow ${flowData.transaction_id} already exists and status is ${flowData.status}`);
+            return false; 
+		}
+
+
+		// insert transaction flow record
+		const flowResult = await DBUtils.query(
+			`INSERT INTO transaction_flow 
+			(transaction_id, from_chain, to_chain, from_address, to_address, amount, gas_price, gas_limit, status) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[flowData.transaction_id, flowData.from_chain, flowData.to_chain, flowData.from_address, flowData.to_address, 
+			flowData.amount, flowData.gas_price, flowData.gas_limit, flowData.status]
+		);
+        logger.info(`${net_name} begin Transaction`);
 		const signedTx = await rpc_web3.eth.accounts.signTransaction(transactionObject, senderPrivateKey)
 		await rpc_web3.eth.sendSignedTransaction(signedTx.rawTransaction)
 			.on('transactionHash', txHash => {
-				logger.info(net_name, 'Transaction Hash:', txHash);
+				transactionHash = txHash;
+				logger.info(`${net_name} Transaction Hash: ${txHash}`);
+				// update transaction hash
+				DBUtils.query(
+					`UPDATE transaction_flow SET transaction_hash = ? WHERE id = ?`,
+					[txHash, flowResult.insertId]
+				);
 			})
 			.on('receipt', receipt => {
-				logger.info(net_name, 'Transaction Receipt:', receipt);
+				status = 'SUCCESS';
+				logger.info(`${net_name} Transaction Receipt: ${JSON.stringify(receipt)}`);
+				// update transaction status to success
+				DBUtils.query(
+					`UPDATE transaction_flow SET status = ? WHERE id = ?`,
+					[status, flowResult.insertId]
+				);
 			})
 			.on('error', err => {
-				logger.error(net_name, 'Transaction Error:', err);
+				status = 'FAIL';
+				errorMessage = err.message;
+				logger.error(`${net_name} Transaction Error: ${err}`);
+				// update transaction status to fail and record error message
+				DBUtils.query(
+					`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+					[status, errorMessage, flowResult.insertId]
+				);
 			}).catch(err => {
-				logger.error(net_name, 'Transaction catch:', err);
+				status = 'FAIL';
+				errorMessage = err.message;
+				logger.error(`${net_name} Transaction catch: ${err}`);
+				// update transaction status to fail and record error message
+				DBUtils.query(
+					`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+					[status, errorMessage, flowResult.insertId]
+				);
 			})
 
-		return true;
+		return status === 'SUCCESS';
 	} catch (err) {
-		logger.error(net_name, 'Signing Error:', err);
+		status = 'FAIL';
+		errorMessage = err.message;
+		logger.error(`${net_name} Signing Error: ${err}`);
+		// if error occurs, update transaction status to fail and record error message
+		if (flowResult && flowResult.insertId) {
+			await DBUtils.query(
+				`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+				[status, errorMessage, flowResult.insertId]
+			);
+		}
 	}
 	return false;
 }
@@ -325,16 +439,16 @@ async function releaseLock(lockName) {
 
 async function fetch_deposit_event_by_graph_sql(name, to_contract) {
     const lockName = `${name}`;
-	// try to acquire lock
-	const hasLock = await acquireLock(lockName);
-	if (!hasLock) {
-		logger.info(`Another instance is processing ${name} graph events`);
-		return;
-	}
+    // try to acquire lock
+    const hasLock = await acquireLock(lockName);
+    if (!hasLock) {
+        logger.info(`Another instance is processing ${name} graph events`);
+        return;
+    }
     try {
         // get last_id
         logger.info('Connected to MySQL');
-        var last_id = 0;
+        let last_id = 0;
         const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
         if (rows.length > 0) {
             last_id = rows[0].last_id;
@@ -343,7 +457,6 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
             logger.error(`No last ID found for ${name}`);
             return;
         }
-
 
         const grquery = `
         {
@@ -383,7 +496,7 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                         amount: elem.amount,
                     }
                     //check if the transaction already exists
-                    const existingTransaction = await DBUtils.query(
+                    let existingTransaction = await DBUtils.query(
                         `SELECT * FROM transactions 
                          WHERE name = ? 
                          AND address = ? 
@@ -391,40 +504,40 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                          AND transaction_hash = ?`,
                         [name, queue_data.address, blockNumber, transaction_hash]
                     );
-					let retry_transaction = false;
+                    let retry_transaction = false;
                     if (existingTransaction.length > 0) {
-						const existingStatus = existingTransaction[0].status;
-						if(existingStatus === 'INIT'){
-							logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
-							// record retry transaction
-							await DBUtils.query(
-								`INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
-								 VALUES (?, ?, ?, ?, ?)`,
-								[name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
-							);
-							retry_transaction = true;
-						}else{
-							logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
-							continue;
-						}
+                        const existingStatus = existingTransaction[0].status;
+                        if(existingStatus === 'INIT'){
+                            logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
+                            // record retry transaction
+                            await DBUtils.query(
+                                `INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
+                                 VALUES (?, ?, ?, ?, ?)`,
+                                [name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
+                            );
+                            retry_transaction = true;
+                        } else {
+                            logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
+                            continue;
+                        }
                     }
-					if(!retry_transaction){
-						//insert transaction record with INIT status
-						const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-						const block_timestamp = new Date(elem.blockTimestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
-						await DBUtils.query(
-							`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
-							VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
-							[name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
-						);
-						logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
-					}
-
+                    if(!retry_transaction){
+                        //insert transaction record with INIT status
+                        const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+                        const block_timestamp = new Date(elem.blockTimestamp * 1000).toISOString().slice(0, 19).replace('T', ' ');
+                        existingTransaction = await DBUtils.query(
+                            `INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
+                            [name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
+                        );
+                        logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
+                    }
                     //do transaction
                     const result = await do_transaction(
                         queue_data.contract,
                         queue_data.address,
                         queue_data.amount,
+                        existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id)
                     );
 
                     //update transaction status
@@ -444,24 +557,21 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                     }
 
                     last_id = blockNumber;
-
                     await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
                     logger.info('update last_id:', last_id);
-                }
-                else {
+                } else {
                     logger.info('fetch_deposit_event_by_graph_sql skip data:', JSON.stringify(elem), elem.id);
                 }
             }
-            
         }
-
-
-    }
-    catch(err){
+    } catch(err) {
         logger.error('fetch_deposit_event_by_graph_sql Error:', err);
     } finally {
-        // release lock
-        await releaseLock(lockName);
+        try {
+            await releaseLock(lockName);
+        } catch (err) {
+            logger.error('Error releasing lock:', err);
+        }
     }
 }
 
@@ -480,8 +590,8 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
 		logger.info(`start ${name} ${route.times} ${hasLock}`);
         // original processing logic
+        let last_id = 0;
         const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
-        var last_id = 0;
         if (rows.length > 0) {
             last_id = rows[0].last_id;
             logger.info(`Last ID for ${name}: ${last_id}`);
@@ -492,7 +602,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
         const fromBlock = last_id + 1; // start from last block number
-        logger.info('fetch_deposit_event_by_rpc query data:', name, fromBlock, latestBlock);
+        logger.info(`fetch_deposit_event_by_rpc query data: ${name}, ${fromBlock}, ${latestBlock}`);
 
 		if(fromBlock > latestBlock){
 			latestBlock = fromBlock+1;
@@ -517,10 +627,9 @@ async function fetch_deposit_event_by_rpc(name, route) {
                     address: sender,
                     amount: amount.toString(),
                 };
-                logger.info(queue_data);
-                logger.info('fetch_deposit_event_by_rpc add to queue:', queue_data.contract, queue_data.address, queue_data.amount, blockNumber);
+                logger.info(`fetch_deposit_event_by_rpc add to queue:' ${queue_data.address} ${queue_data.amount} ${blockNumber}`);
 				//check if the transaction already exists
-				const existingTransaction = await DBUtils.query(
+				let existingTransaction = await DBUtils.query(
 					`SELECT * FROM transactions 
 					 WHERE name = ? 
 					 AND address = ? 
@@ -550,7 +659,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
 					//insert transaction record with INIT status
 					const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
 					const block_timestamp = timestamp;
-					await DBUtils.query(
+					existingTransaction = await DBUtils.query(
 						`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
 						VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
 						[name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
@@ -563,6 +672,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                     queue_data.contract,
                     queue_data.address,
                     queue_data.amount,
+                     existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id)
                 );
 
                 //update transaction status
@@ -591,17 +701,13 @@ async function fetch_deposit_event_by_rpc(name, route) {
     } catch (err) {
         logger.error('fetch_deposit_event_by_rpc Error:', err);
     } finally {
-        // release lock
-		logger.info(`releaseLock ${lockName} ${route.times}`);
-        await releaseLock(lockName);
+        try {
+            await releaseLock(lockName);
+        } catch (err) {
+            logger.error('Error releasing lock:', err);
+        }
     }
 }
-
-
-
-
-
-
 
 
 module.exports = {
