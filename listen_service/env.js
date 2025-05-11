@@ -4,6 +4,7 @@ require('dotenv').config();
 const chainConfig = {
 
   mock_transactions: process.env.MOCK_TRANSACTIONS,
+  rpc_max_block_range: process.env.RPC_MAX_BLOCK_RANGE || 8000 ,
 
   // L1 configuration
   l1_name: process.env.L1_NAME,

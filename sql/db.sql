@@ -6,6 +6,8 @@ USE agld;
 CREATE TABLE IF NOT EXISTS last_ids (
     name VARCHAR(255) NOT NULL,  -- Name of the process or transaction type
     last_id BIGINT NOT NULL,     -- Last processed ID for the given name
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP-- Update timestamp
     PRIMARY KEY (name)           -- Primary key on 'name' to ensure uniqueness
 );
 
@@ -52,8 +54,7 @@ CREATE TABLE IF NOT EXISTS distributed_locks (
 CREATE TABLE IF NOT EXISTS transaction_flow (
     id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each flow record
     transaction_id INT NOT NULL,        -- Reference to the parent transaction
-    from_chain VARCHAR(255) NOT NULL,   -- Source chain name
-    to_chain VARCHAR(255) NOT NULL,     -- Destination chain name
+    name VARCHAR(255) NOT NULL,         -- Route name (e.g. 'L1->L2', 'L2->L1', etc.)
     from_address VARCHAR(255) NOT NULL, -- Sender address
     to_address VARCHAR(255) NOT NULL,   -- Recipient address
     amount DECIMAL(38, 0) NOT NULL,     -- Transaction amount
@@ -71,3 +72,9 @@ insert into last_ids (name, last_id) values ('L1->L2', 0);
 insert into last_ids (name, last_id) values ('L2->L1', 0);
 insert into last_ids (name, last_id) values ('shard1->L2', 0);
 insert into last_ids (name, last_id) values ('L2->shard1', 0); 
+
+
+-- Add created_at and updated_at columns to transactions table
+-- ALTER TABLE transactions
+-- ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
+-- ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update timestamp'; 

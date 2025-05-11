@@ -141,7 +141,7 @@ logger.info(`chainConfig.mock_transactions: ${chainConfig.mock_transactions}`);
 logger.info(`chainConfig.l1_graph_query_use: ${chainConfig.l1_graph_query_use}`);
 
 
-async function do_transaction(to, recipient, amount, transactionId) {
+async function do_transaction(name, to, recipient, amount, transactionId) {
     if (!to || !recipient || !amount || !transactionId) {
         throw new Error(`Missing required parameters ${to}, ${recipient}, ${amount}, ${transactionId}`);
     }
@@ -231,8 +231,7 @@ async function do_transaction(to, recipient, amount, transactionId) {
 		// record transaction flow
 		const flowData = {
 			transaction_id: transactionId,
-			from_chain: to.chainConfig.name,
-			to_chain: to.chainConfig.name,
+			name: name,
 			from_address: senderAddress,
 			to_address: recipientAddress,
 			amount: amountToSend,
@@ -245,12 +244,11 @@ async function do_transaction(to, recipient, amount, transactionId) {
 		const existingFlow = await DBUtils.query(
 			`SELECT * FROM transaction_flow 
 			WHERE transaction_id = ? 
-			AND from_chain = ? 
-			AND to_chain = ? 
+			AND name = ? 
 			AND from_address = ? 
 			AND to_address = ? 
 			AND amount = ?`,
-			[flowData.transaction_id, flowData.from_chain, flowData.to_chain, flowData.from_address, flowData.to_address, flowData.amount]
+			[flowData.transaction_id, flowData.name, flowData.from_address, flowData.to_address, flowData.amount]
 		);
 
 
@@ -311,9 +309,9 @@ async function do_transaction(to, recipient, amount, transactionId) {
 		// insert transaction flow record
 		const flowResult = await DBUtils.query(
 			`INSERT INTO transaction_flow 
-			(transaction_id, from_chain, to_chain, from_address, to_address, amount, gas_price, gas_limit, status) 
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			[flowData.transaction_id, flowData.from_chain, flowData.to_chain, flowData.from_address, flowData.to_address, 
+			(transaction_id, name, from_address, to_address, amount, gas_price, gas_limit, status) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			[flowData.transaction_id, flowData.name, flowData.from_address, flowData.to_address, 
 			flowData.amount, flowData.gas_price, flowData.gas_limit, flowData.status]
 		);
         logger.info(`${net_name} begin Transaction`);
@@ -557,6 +555,7 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                     let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
                     //do transaction
                     const result = await do_transaction(
+                        name,
                         queue_data.contract,
                         queue_data.address,
                         queue_data.amount,
@@ -632,11 +631,23 @@ async function fetch_deposit_event_by_rpc(name, route) {
 			return;
 		}
 
+        if(BigInt(latestBlock) - BigInt(fromBlock) > BigInt(chainConfig.rpc_max_block_range)){
+            logger.info(`fetch_deposit_event_by_rpc block range is too large, ${name}, ${fromBlock}, ${latestBlock}`);
+            latestBlock = BigInt(fromBlock) + BigInt(chainConfig.rpc_max_block_range);
+            
+        }
         // query all deposit events from fromBlock to latestBlock
         const events = await route.from.contract.getPastEvents('Deposit', {
             fromBlock: fromBlock-1,
-            toBlock: 'latest'
+            toBlock: latestBlock
         });
+
+        if(events.length == 0){
+            logger.info(`fetch_deposit_event_by_rpc event.length is 0, skip.`);
+            await DBUtils.query(`UPDATE last_ids SET last_id = ? WHERE name = ?`, [latestBlock, name]);
+            logger.info(`update ${name} last_id: ${latestBlock}`);
+            return;
+        }
 
         logger.info(`fetch_deposit_event_by_rpc events data: ${name}, ${events.length}`);
 
@@ -644,8 +655,8 @@ async function fetch_deposit_event_by_rpc(name, route) {
             const { sender, user ,amount } = event.returnValues;
             const blockNumber = event.blockNumber;
 			let transaction_hash = event.transactionHash;
-
-            if (blockNumber > last_id) {
+            logger.info(`handle event: ${name}, ${blockNumber}, ${last_id}`);
+            if (blockNumber >= last_id) {
 				let to  =  route.to;
                 const queue_data = {
                     contract: to,
@@ -695,6 +706,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                 let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
                 //do transaction
                 const result = await do_transaction(
+                    name,
                     queue_data.contract,
                     queue_data.address,
                     queue_data.amount,
@@ -719,8 +731,8 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
                 //update last_id
                 last_id = blockNumber;
-                await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
-                logger.info(`update last_id: ${last_id}`);
+                await DBUtils.query(`UPDATE last_ids SET last_id = ? WHERE name = ?`, [last_id, name]);
+                logger.info(`update ${name} last_id: ${last_id}`);
             }
         };
 		
