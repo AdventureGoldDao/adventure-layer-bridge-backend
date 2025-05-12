@@ -410,9 +410,9 @@ function listen_deposit_events() {
 				//use rpc to query the latest deposit events
 				fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
 			}
-			// for (const [name, route] of routes) {
-			// 	fetch_deposit_event_by_rpc(name, route );
-			// }
+			for (const [name, route] of routes) {
+				fetch_deposit_event_by_rpc(name, route );
+			}
 		} catch (error) {
 			logger.error('Error in listen_deposit_events interval:', error);
 		} finally {
