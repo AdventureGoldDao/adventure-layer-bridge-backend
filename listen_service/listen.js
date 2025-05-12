@@ -215,15 +215,31 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 		}
 		else {
             //w3.utils.toWei(amountToSend, 'ether')
+            
+			const currentBlock = await rpc_web3.eth.getBlock('latest');
+			const baseFeePerGas = new BN(currentBlock.baseFeePerGas);
+			const maxPriorityFeePerGas = new BN(w3.utils.toWei('2', 'gwei')); // 动态设置优先费
+			const dynamicGasPrice = baseFeePerGas.mul(new BN(2)).add(maxPriorityFeePerGas); // 动态计算 gasPrice
+
+			const estimatedGasLimit = await rpc_web3.eth.estimateGas({
+				from: senderAddress,
+				to: recipientAddress,
+				value: amountToSend.toString(),
+			}); // dynamic estimate gasLimit
+
+			// ensure all values are converted to strings
 			transactionObject = {
 				from: senderAddress,
 				to: recipientAddress,
-				value: amountToSend.toString(), // 确保 BigInt 转换为字符串
-				gasPrice: w3.utils.toWei(gasPriceGwei, 'gwei'), // Convert gas price to Wei
-				gas: gasLimit,
+				value: amountToSend.toString(),
+				gasPrice: dynamicGasPrice.toString(),
+				gas: estimatedGasLimit.toString(),
+				nonce: await rpc_web3.eth.getTransactionCount(senderAddress)
 			}
 
-            logger.info(`transactionObject: ${JSON.stringify(transactionObject)}`);
+			logger.info(`Transaction object: ${JSON.stringify(transactionObject, (key, value) =>
+				typeof value === 'bigint' ? value.toString() : value
+			)}`);
 		}
 
 
@@ -256,7 +272,7 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
             // if the transaction already exists
 			logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status}`);
 			
-            if(flowData.status == 'INIT'){
+            if(flowData.status == 'INIT' && existingFlow[0].transaction_hash != null){
                 logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status} start query `);
                 // if the transaction is in INIT status, update the status to SUCCESS
                 try{
@@ -300,9 +316,10 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                     logger.error(`Transaction ${existingFlow[0].transaction_hash} query error: ${err.message}`);
                 }
             }
-
-            console.log(`transaction_flow ${flowData.transaction_id} already exists and status is ${flowData.status}`);
-            return false; 
+            if(existingFlow[0].transaction_hash != null){
+                console.log(`transaction_flow ${flowData.transaction_id} already exists and status is ${flowData.status}`);
+                return false; 
+            }
 		}
 
 
@@ -352,7 +369,7 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 			}).catch(err => {
 				status = 'FAIL';
 				errorMessage = err.message;
-				logger.error(`${net_name} Transaction catch: ${err}`);
+                logger.error(`${net_name} Transaction Error: ${err.message}`);
 				// update transaction status to fail and record error message
 				DBUtils.query(
 					`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
@@ -393,9 +410,9 @@ function listen_deposit_events() {
 				//use rpc to query the latest deposit events
 				fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
 			}
-			for (const [name, route] of routes) {
-				fetch_deposit_event_by_rpc(name, route );
-			}
+			// for (const [name, route] of routes) {
+			// 	fetch_deposit_event_by_rpc(name, route );
+			// }
 		} catch (error) {
 			logger.error('Error in listen_deposit_events interval:', error);
 		} finally {
