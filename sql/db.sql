@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS transaction_flow (
     amount DECIMAL(38, 0) NOT NULL,     -- Transaction amount
     gas_price VARCHAR(255),             -- Gas price used
     gas_limit BIGINT,                   -- Gas limit used
+    nonce BIGINT,                       -- Transaction nonce
     transaction_hash VARCHAR(255),      -- Transaction hash
+    block_number BIGINT,                -- Block number where transaction is included
     status ENUM('INIT', 'SUCCESS', 'FAIL') NOT NULL DEFAULT 'INIT', -- Status of the transaction
     error_message TEXT,                 -- Error message if any
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp

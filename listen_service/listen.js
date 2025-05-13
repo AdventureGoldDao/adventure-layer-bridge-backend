@@ -284,151 +284,173 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 			amount: amountToSend,
 			gas_price: transactionObject.gasPrice || `${transactionObject.maxFeePerGas}/${transactionObject.maxPriorityFeePerGas}`,
 			gas_limit: gasLimit,
+			nonce: transactionObject.nonce,
 			status: 'INIT'
 		};
 
 		// query transaction_flow table to check if the transaction already exists
-		const existingFlow = await DBUtils.query(
+		const existingFlowList = await DBUtils.query(
 			`SELECT * FROM transaction_flow 
 			WHERE transaction_id = ? 
 			AND name = ? 
 			AND from_address = ? 
 			AND to_address = ? 
-			AND amount = ?`,
+			AND amount = ?
+			ORDER BY id DESC LIMIT 1`,
 			[flowData.transaction_id, flowData.name, flowData.from_address, flowData.to_address, flowData.amount]
 		);
 
 
-		if (existingFlow.length > 0) {
+		if (existingFlowList.length > 0) {
+            const existingFlow = existingFlowList[0];
             // if the transaction already exists
-			logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status}`);
+			logger.info(`Transaction flow already exists: ${existingFlow.transaction_id} ${existingFlow.status}`);
 			
-            if(flowData.status == 'INIT' && existingFlow[0].transaction_hash != null){
-                logger.info(`Transaction flow already exists: ${flowData.transaction_id} ${flowData.status} start query `);
+
+            if(existingFlow.status == 'SUCCESS'){
+                logger.info(`Transaction flow already exists: ${existingFlow.transaction_id} ${existingFlow.status} return true`);
+                return true;
+            }
+
+            // if the transaction hash is not null, and the status is FAIL, return false
+            if(existingFlow.status == 'FAIL' && existingFlow.transaction_hash != null){
+                console.log(`transaction_flow ${existingFlow.transaction_id} already exists and status is ${existingFlow.status}`);
+                return false; 
+            }
+            
+            // need query the transaction hash
+            if(existingFlow.status == 'INIT' && existingFlow.transaction_hash != null){
+                logger.info(`Transaction flow already exists: ${existingFlow.transaction_id} ${existingFlow.status} start query `);
                 // if the transaction is in INIT status, update the status to SUCCESS
                 try{
-                    const receipt = await rpc_web3.eth.getTransactionReceipt(existingFlow[0].transaction_hash);
+                    const receipt = await rpc_web3.eth.getTransactionReceipt(existingFlow.transaction_hash);
                     // logger.info(`Transaction receipt: ${JSON.stringify(receipt, (key, value) =>
                     //     typeof value === 'bigint' ? value.toString() : value
                     // )}`);
                     
                     // check if the transaction is still pending
                     if (!receipt) {
-                        logger.info(`Transaction ${existingFlow[0].transaction_hash} is still pending.`);
-                        return false; // return false to let the caller know the transaction is still pending
+                        logger.info(`Transaction ${existingFlow.transaction_hash} is still pending.`);
+                        return "PENDING"; // return false to let the caller know the transaction is still pending
                     }
 
                     if (receipt.status) {
-                        logger.info(`Transaction ${existingFlow[0].transaction_hash} confirmed as SUCCESS on chain.`);
-                        
+                        logger.info(`Transaction ${existingFlow.transaction_hash} confirmed as SUCCESS on chain.`);
+                        const blockNumber = receipt.blockNumber;
+                        logger.info(`Transaction ${existingFlow.transaction_hash} is included in block number: ${blockNumber}`);
                         const updateResult = await DBUtils.query(
-                            `UPDATE transaction_flow SET status = 'SUCCESS' WHERE id = ?`,
-                            [existingFlow[0].id]
+                            `UPDATE transaction_flow SET status = 'SUCCESS', block_number = ? WHERE id = ?`,
+                            [blockNumber, existingFlow.id]
                         );
+                        
                         if (updateResult.affectedRows === 0) {
-                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow[0].id}`);
+                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow.id}`);
                             return false;
                         }
                     
                         return true;
                     } else {
-                        logger.error(`Transaction ${existingFlow[0].transaction_hash} confirmed as FAIL on chain.`);
+                        logger.error(`Transaction ${existingFlow.transaction_hash} confirmed as FAIL on chain.`);
                         const updateResult = await DBUtils.query(
                             `UPDATE transaction_flow SET status = 'FAIL' WHERE id = ?`,
-                            [existingFlow[0].id]
+                            [existingFlow.id]
                         );
                         if (updateResult.affectedRows === 0) {
-                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow[0].id}`);
+                            logger.error(`Failed to update transaction_flow status for id: ${existingFlow.id}`);
                             return false;
                         }
                         return false;
                     }
                 } catch(err){
-                    logger.error(`Transaction ${existingFlow[0].transaction_hash} query error: ${err.message}`);
+                    logger.error(`Transaction ${existingFlow.transaction_hash} query error: ${err.message}`);
                 }
+                return "PENDING";
             }
-            if(existingFlow[0].transaction_hash != null){
-                console.log(`transaction_flow ${flowData.transaction_id} already exists and status is ${flowData.status}`);
-                return false; 
+
+            // retry transaction
+            console.log(`transaction_flow need retry ${existingFlow.transaction_id} already exists and status[${existingFlow.status}],transaction_hash[${existingFlow.transaction_hash}]`);
+            // update the nonce
+            if(existingFlow.nonce != transactionObject.nonce){
+                logger.warn(`transaction_flow need retry ${existingFlow.transaction_id} nonce existingFlow[${existingFlow.nonce}], transactionObject[${transactionObject.nonce}] is not the same`);
+                flowData.nonce = existingFlow.nonce;
+                transactionObject.nonce = existingFlow.nonce;
             }
+
 		}
 
 
 		// insert transaction flow record
 		const flowResult = await DBUtils.query(
 			`INSERT INTO transaction_flow 
-			(transaction_id, name, from_address, to_address, amount, gas_price, gas_limit, status) 
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			(transaction_id, name, from_address, to_address, amount, gas_price, gas_limit, nonce, status) 
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[flowData.transaction_id, flowData.name, flowData.from_address, flowData.to_address, 
-			flowData.amount, flowData.gas_price, flowData.gas_limit, flowData.status]
+			flowData.amount, flowData.gas_price, flowData.gas_limit, flowData.nonce, flowData.status]
 		);
-        logger.info(`${net_name} begin Transaction`);
-		const signedTx = await rpc_web3.eth.accounts.signTransaction(transactionObject, senderPrivateKey)
-		await rpc_web3.eth.sendSignedTransaction(signedTx.rawTransaction)
-			.on('transactionHash', txHash => {
-				transactionHash = txHash;
-				logger.info(`${net_name} Transaction Hash: ${txHash}`);
-				// update transaction hash
-				DBUtils.query(
-					`UPDATE transaction_flow SET transaction_hash = ? WHERE id = ?`,
-					[txHash, flowResult.insertId]
-				);
-			})
-			.on('receipt', receipt => {
-				// Check transaction status in receipt
-				if (receipt.status) {
-					status = 'SUCCESS';
-					logger.info(`${net_name} ${flowData.transaction_id} Transaction Receipt: SUCCESS`);
-					// update transaction status to success
-					DBUtils.query(
-						`UPDATE transaction_flow SET status = ? WHERE id = ?`,
-						[status, flowResult.insertId]
-					);
-				} else {
-					status = 'FAIL';
-					errorMessage = 'Transaction reverted by EVM';
-					logger.error(`${net_name} ${flowData.transaction_id} Transaction Receipt: FAILED - ${errorMessage}`);
-					// update transaction status to fail and record error message
-					DBUtils.query(
-						`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
-						[status, errorMessage, flowResult.insertId]
-					);
-				}
-			})
-			.on('error', err => {
-				status = 'FAIL';
-				errorMessage = err.message;
-				logger.error(`${net_name} Transaction Error: ${err}`);
-				// update transaction status to fail and record error message
-				DBUtils.query(
-					`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
-					[status, errorMessage, flowResult.insertId]
-				);
-			}).catch(err => {
-				status = 'FAIL';
-				errorMessage = err.message;
-                logger.error(`${net_name} Transaction Error: ${err.message}`);
-				// update transaction status to fail and record error message
-				DBUtils.query(
-					`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
-					[status, errorMessage, flowResult.insertId]
-				);
-			})
-
-		return status === 'SUCCESS';
-	} catch (err) {
-		status = 'FAIL';
-		errorMessage = err.message;
-		logger.error(`${net_name} Signing Error: ${err}`);
-		// if error occurs, update transaction status to fail and record error message
-		if (flowResult && flowResult.insertId) {
-			await DBUtils.query(
-				`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
-				[status, errorMessage, flowResult.insertId]
-			);
-		}
-	}
-	return false;
+        logger.info(`${net_name} begin Transaction transaction_id[${flowData.transaction_id}],id[${flowResult.insertId}]`);
+        const signedTx = await rpc_web3.eth.accounts.signTransaction(transactionObject, senderPrivateKey)
+        
+        // 使用 Promise 包装事件监听器
+        return new Promise((resolve, reject) => {
+            rpc_web3.eth.sendSignedTransaction(signedTx.rawTransaction)
+                .on('transactionHash', txHash => {
+                    transactionHash = txHash;
+                    logger.info(`${net_name} Transaction Hash: ${txHash}`);
+                    // update transaction hash
+                    DBUtils.query(
+                        `UPDATE transaction_flow SET transaction_hash = ? WHERE id = ?`,
+                        [txHash, flowResult.insertId]
+                    );
+                })
+                .on('receipt', receipt => {
+                    // Check transaction status in receipt
+                    if (receipt.status) {
+                        status = 'SUCCESS';
+                        const blockNumber = receipt.blockNumber;
+                        logger.info(`${net_name} ${flowData.transaction_id} Transaction Receipt: SUCCESS, block number: ${blockNumber}`);
+                        // update transaction status to success and block number
+                        DBUtils.query(
+                            `UPDATE transaction_flow SET status = ?, block_number = ? WHERE id = ?`,
+                            [status, blockNumber, flowResult.insertId]
+                        );
+                        resolve(true);
+                    } else {
+                        status = 'FAIL';
+                        errorMessage = 'Transaction reverted by EVM';
+                        logger.error(`${net_name} ${flowData.transaction_id} Transaction Receipt: FAILED - ${errorMessage}`);
+                        // update transaction status to fail and record error message
+                        DBUtils.query(
+                            `UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+                            [status, errorMessage, flowResult.insertId]
+                        );
+                        resolve(false);
+                    }
+                })
+                .on('error', err => {
+                    status = 'FAIL';
+                    errorMessage = err.message;
+                    logger.error(`${net_name} Transaction Error: ${err}`);
+                    // update transaction status to fail and record error message
+                    DBUtils.query(
+                        `UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+                        [status, errorMessage, flowResult.insertId]
+                    );
+                    reject(err);
+                });
+        });
+    } catch (err) {
+        status = 'FAIL';
+        errorMessage = err.message;
+        logger.error(`${net_name}  Error: ${err}`);
+        // if error occurs, update transaction status to fail and record error message
+        if (flowResult && flowResult.insertId) {
+            await DBUtils.query(
+                `UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+                [status, errorMessage, flowResult.insertId]
+            );
+        }
+        throw err;
+    }
 }
 
 
