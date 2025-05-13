@@ -1,7 +1,7 @@
 const { Web3 } = require('web3');
 
 class BlockchainConfig {
-	constructor(name, rpc_url, wss_url) {
+	constructor(name, rpc_url, wss_url , block_delay = 0) {
 		// Name of the blockchain
 		this.name = name;
 		// RPC URL for HTTP connection
@@ -12,6 +12,8 @@ class BlockchainConfig {
 		this.rpcWb3 = new Web3(this.rpc_url);
 		// Web3 instance for WebSocket connection
 		this.wsWeb3 = new Web3(wss_url);
+		// 
+		this.block_delay = block_delay;
 	}
 }
 

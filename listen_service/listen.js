@@ -31,11 +31,13 @@ function printChainConfig() {
 	logger.info('L1 contract Address ' + chainConfig.l1_contract_address);
     logger.info(`L1 Owner Address: ${chainConfig.l1_owner_address}`);
     logger.info(`L1 Owner Private Key: ${maskPrivateKey(chainConfig.l1_owner_private_key)}`);
+    logger.info(`L1 Block Delay : ${chainConfig.l1_block_delay}`);
 	
 	logger.info('L2 name ' + chainConfig.l2_name);
     logger.info('L2 contract Address ' + chainConfig.l2_contract_address);
     logger.info(`L2 Owner Address: ${chainConfig.l2_owner_address}`);
     logger.info(`L2 Owner Private Key: ${maskPrivateKey(chainConfig.l2_owner_private_key)}`);
+    logger.info(`L2 Block Delay: ${chainConfig.l2_block_delay}`);
 
     for (let i = 1; i <= 10; i++) {
         const shardName = chainConfig[`shard${i}_name`];
@@ -46,14 +48,15 @@ function printChainConfig() {
 		logger.info('Shard${i} contract Address ' + chainConfig[`shard${i}_contract_address`]);
         logger.info(`Shard${i} Owner Address: ${chainConfig[`shard${i}_owner_address`]}`);
         logger.info(`Shard${i} Owner Private Key: ${maskPrivateKey(chainConfig[`shard${i}_owner_private_key`])}`);
+        logger.info(`Shard Block Delay: ${chainConfig.shard_block_delay}`);
     }
 }
 
 printChainConfig();
 
 //connect to the blockchain
-const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url);
-const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url);
+const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url,chainConfig.l1_block_delay);
+const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url,chainConfig.l2_block_delay);
 
 // Initialize shard arrays
 const shards = [];
@@ -73,9 +76,10 @@ for (let i = 1; i <= 10; i++) { // for more  change it
     const l2ToShardContractAddress = chainConfig[`l2_to_shard${i}_contract_address`];
     const shardOwnerAddress = chainConfig[`shard${i}_owner_address`];
     const shardOwnerPrivateKey = chainConfig[`shard${i}_owner_private_key`];
+    const blockDelay = chainConfig[`shard${i}_block_delay`];
 
     if (shardName && shardRpcUrl && shardWssUrl) {
-        const shard = new BlockchainConfig(shardName, shardRpcUrl, shardWssUrl);
+        const shard = new BlockchainConfig(shardName, shardRpcUrl, shardWssUrl, blockDelay);
         shards.push({ index: i, config: shard });
 
         if (shardContractAddress && l2ToShardContractAddress) {
@@ -344,18 +348,25 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 				);
 			})
 			.on('receipt', receipt => {
-				status = 'SUCCESS';
-				//  this print receipt will make the whole transaction failed, be careful
-				// const safeReceipt = JSON.parse(JSON.stringify(receipt, (key, value) =>
-				// 	typeof value === 'bigint' ? value.toString() : value
-				// ));
-                //logger.info(`${net_name} Transaction Receipt ${JSON.stringify(safeReceipt)}`);
-				logger.info(`${net_name} Transaction Receipt`);
-				// update transaction status to success
-				DBUtils.query(
-					`UPDATE transaction_flow SET status = ? WHERE id = ?`,
-					[status, flowResult.insertId]
-				);
+				// Check transaction status in receipt
+				if (receipt.status) {
+					status = 'SUCCESS';
+					logger.info(`${net_name} ${flowData.transaction_id} Transaction Receipt: SUCCESS`);
+					// update transaction status to success
+					DBUtils.query(
+						`UPDATE transaction_flow SET status = ? WHERE id = ?`,
+						[status, flowResult.insertId]
+					);
+				} else {
+					status = 'FAIL';
+					errorMessage = 'Transaction reverted by EVM';
+					logger.error(`${net_name} ${flowData.transaction_id} Transaction Receipt: FAILED - ${errorMessage}`);
+					// update transaction status to fail and record error message
+					DBUtils.query(
+						`UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
+						[status, errorMessage, flowResult.insertId]
+					);
+				}
 			})
 			.on('error', err => {
 				status = 'FAIL';
@@ -640,7 +651,10 @@ async function fetch_deposit_event_by_rpc(name, route) {
         }
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
-        const fromBlock = last_id ; // start from last block number
+        logger.info(`Using block delay: ${route.from.chainConfig.block_delay} for chain ${name}`);
+
+        latestBlock = BigInt(latestBlock) - BigInt(route.from.chainConfig.block_delay);
+        const fromBlock = BigInt(last_id); // start from last block number
         logger.info(`fetch_deposit_event_by_rpc query data: ${name}, ${fromBlock}, ${latestBlock}`);
 
 		if(fromBlock > latestBlock){
@@ -648,15 +662,14 @@ async function fetch_deposit_event_by_rpc(name, route) {
 			return;
 		}
 
-        if(BigInt(latestBlock) - BigInt(fromBlock) > BigInt(chainConfig.rpc_max_block_range)){
+        if(latestBlock - fromBlock > BigInt(chainConfig.rpc_max_block_range)){
             logger.info(`fetch_deposit_event_by_rpc block range is too large, ${name}, ${fromBlock}, ${latestBlock}`);
-            latestBlock = BigInt(fromBlock) + BigInt(chainConfig.rpc_max_block_range);
-            
+            latestBlock = fromBlock + BigInt(chainConfig.rpc_max_block_range);
         }
         // query all deposit events from fromBlock to latestBlock
         const events = await route.from.contract.getPastEvents('Deposit', {
-            fromBlock: fromBlock-1,
-            toBlock: latestBlock
+            fromBlock: Number(fromBlock - BigInt(1)),
+            toBlock: Number(latestBlock)
         });
 
         if(events.length == 0){

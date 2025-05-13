@@ -12,11 +12,15 @@ const chainConfig = {
   l1_rpc_url: process.env.L1_RPC_URL,
   l1_graph_query_use: process.env.L1_GRAPH_QUERY_USE,
   l1_graph_query_url: process.env.L1_GRAPH_QUERY_URL,
+  l1_block_delay: process.env.L1_BLOCK_DELAY || 12, // The reasonable default value for Ethereum is 12 blocks
 
+  
   erc20_token_address: process.env.ERC20_TOKEN_ADDRESS,
   l1_contract_address: process.env.L1_CONTRACT_ADDRESS,
   l1_owner_address: process.env.L1_OWNER_ADDRESS,
   l1_owner_private_key: process.env.L1_OWNER_PRIVATE_KEY,
+
+  //
 
   // L2 configuration
   l2_name: process.env.L2_NAME,
@@ -25,6 +29,7 @@ const chainConfig = {
   l2_contract_address: process.env.L2_CONTRACT_ADDRESS,
   l2_owner_address: process.env.L2_OWNER_ADDRESS,
   l2_owner_private_key: process.env.L2_OWNER_PRIVATE_KEY,
+  l2_block_delay: process.env.L2_BLOCK_DELAY || 0, // Set an appropriate value based on the characteristics of the L2 chain
 
 };
 
@@ -39,6 +44,7 @@ for (let i = 1; i <= 10; i++) {
   chainConfig[`l2_to_shard${i}_contract_address`] = process.env[`L2_TO_SHARD${i}_CONTRACT_ADDRESS`];
   chainConfig[`shard${i}_owner_address`] = process.env[`SHARD${i}_OWNER_ADDRESS`];
   chainConfig[`shard${i}_owner_private_key`] = process.env[`SHARD${i}_OWNER_PRIVATE_KEY`];
+  chainConfig[`shard${i}_block_delay`] = process.env[`SHARD${i}_BLOCK_DELAY`] || 0; // Set an appropriate value based on the characteristics of the Shard chain
 }
 
 // MySQL configuration
