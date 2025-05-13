@@ -8,6 +8,7 @@ const { chainConfig } = require('./env');
 const { BlockchainConfig, ContractConfig, Route } = require('./config_class');
 const DBUtils = require('./db_utils'); 
 const logger = require('./log_utils');
+const { processTransactions } = require('./transaction_processor');
 // ABI of the EtherReceiver contract
 const abi = abis.deposit;
 const l1_abi = abis.l1;
@@ -128,6 +129,7 @@ const l2_contract = new ContractConfig(
 );
 
 const routes = new Map();
+routes.set('L1->L2', new Route(l1_contract, l2_contract));
 routes.set('L2->L1', new Route(l2_contract, l1_contract));
 
 // for shard add route
@@ -405,25 +407,24 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 }
 
 
-function listen_deposit_events() {
+async function listen_deposit_events() {
 	logger.info('listen_deposit_events start');
 	let lock = false;
-	setInterval(() => {
+	setInterval(async () => {
 		if(lock){
 			return;
 		}
 		lock = true;
 		try {
-			if(chainConfig.l1_graph_query_use == 'true'){
-				//use graph sql to query the latest deposit events
-				fetch_deposit_event_by_graph_sql('L1->L2', l2_contract );
-			}else{
-				//use rpc to query the latest deposit events
-				fetch_deposit_event_by_rpc('L1->L2', new Route(l1_contract, l2_contract) );
-			}
 			for (const [name, route] of routes) {
-				fetch_deposit_event_by_rpc(name, route );
+				if('L1->L2' == name && chainConfig.l1_graph_query_use == 'true'){
+					logger.info(`use graph sql to query the latest deposit events`)
+					await fetch_deposit_event_by_graph_sql(name, route.to_contract );
+				}else{
+					await fetch_deposit_event_by_rpc(name, route );
+				}
 			}
+			await processTransactions();
 		} catch (error) {
 			logger.error('Error in listen_deposit_events interval:', error);
 		} finally {
@@ -580,31 +581,31 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                         );
                         logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
                     }
-                    let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
-                    //do transaction
-                    const result = await do_transaction(
-                        name,
-                        queue_data.contract,
-                        queue_data.address,
-                        queue_data.amount,
-                        transaction_id
-                    );
+                    // let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
+                    // //do transaction
+                    // const result = await do_transaction(
+                    //     name,
+                    //     queue_data.contract,
+                    //     queue_data.address,
+                    //     queue_data.amount,
+                    //     transaction_id
+                    // );
 
-                    //update transaction status
-                    if(result) {
-                        await DBUtils.query(
-                            `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
-                            [transaction_id]
-                        );
-                        logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
-                    } else {
-                        await DBUtils.query(
-                            `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
-                            [transaction_id]
-                        );
-                        logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
-                        return;
-                    }
+                    // //update transaction status
+                    // if(result) {
+                    //     await DBUtils.query(
+                    //         `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
+                    //         [transaction_id]
+                    //     );
+                    //     logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
+                    // } else {
+                    //     await DBUtils.query(
+                    //         `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
+                    //         [transaction_id]
+                    //     );
+                    //     logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
+                    //     return;
+                    // }
 
                     last_id = blockNumber;
                     await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
@@ -630,35 +631,34 @@ async function fetch_deposit_event_by_rpc(name, route) {
 	route.times++;
 	// try to acquire lock
 	const hasLock = await acquireLock(lockName);
-	logger.info(`fetch_deposit_event_by_rpc ${name} ${route.times} ${hasLock}`);
+	// logger.info(`fetch_deposit_event_by_rpc ${name} ${route.times} ${hasLock}`);
 
 	if (!hasLock) {
-		logger.info(`Another instance is processing ${name}  ${route.times} events`);
+		logger.info(`Another instance is processing ${name} route.times ${route.times} events`);
 		return;
 	}
     try {
 
-		logger.info(`start ${name} ${route.times} ${hasLock}`);
+		// logger.info(`start ${name} ${route.times} ${hasLock}`);
         // original processing logic
         let last_id = 0;
         const rows = await DBUtils.query(`SELECT last_id FROM last_ids WHERE name = '${name}'`);
         if (rows.length > 0) {
             last_id = rows[0].last_id;
-            logger.info(`Last ID for ${name}: ${last_id}`);
+            //logger.info(`Last ID for ${name}: ${last_id}`);
         } else {
             logger.error(`No last ID found for ${name}`);
             return;
         }
 
         let latestBlock = await route.from.chainConfig.rpcWb3.eth.getBlockNumber();
-        logger.info(`Using block delay: ${route.from.chainConfig.block_delay} for chain ${name}`);
 
-        latestBlock = BigInt(latestBlock) - BigInt(route.from.chainConfig.block_delay);
         const fromBlock = BigInt(last_id); // start from last block number
-        logger.info(`fetch_deposit_event_by_rpc query data: ${name}, ${fromBlock}, ${latestBlock}`);
+        logger.info(`fetch_deposit_event_by_rpc query data: ${name},fromBlock[${fromBlock}], latestBlock[${latestBlock}] - blockDelay[${route.from.chainConfig.block_delay}] `);
+        latestBlock = BigInt(latestBlock) - BigInt(route.from.chainConfig.block_delay);
 
 		if(fromBlock > latestBlock){
-            logger.info(`fetch_deposit_event_by_rpc skip data: ${name}, ${fromBlock}, ${latestBlock}`);
+            logger.info(`fetch_deposit_event_by_rpc skip data: ${name}, fromBlock[${fromBlock}], latestBlock[${latestBlock}]`);
 			return;
 		}
 
@@ -668,24 +668,27 @@ async function fetch_deposit_event_by_rpc(name, route) {
         }
         // query all deposit events from fromBlock to latestBlock
         const events = await route.from.contract.getPastEvents('Deposit', {
-            fromBlock: Number(fromBlock - BigInt(1)),
+            fromBlock: Number(fromBlock),
             toBlock: Number(latestBlock)
         });
 
         if(events.length == 0){
-            logger.info(`fetch_deposit_event_by_rpc event.length is 0, skip.`);
             await DBUtils.query(`UPDATE last_ids SET last_id = ? WHERE name = ?`, [latestBlock, name]);
-            logger.info(`update ${name} last_id: ${latestBlock}`);
+            logger.info(`fetch_deposit_event_by_rpc ${name} event.length is 0, only update ${name} last_id: ${latestBlock}`);
             return;
         }
 
         logger.info(`fetch_deposit_event_by_rpc events data: ${name}, ${events.length}`);
 
+        // 准备批量插入的数据
+        const insertQueries = [];
+        let maxBlockNumber = last_id;
+
         for (const event of events) {
             const { sender, user ,amount } = event.returnValues;
             const blockNumber = event.blockNumber;
-			let transaction_hash = event.transactionHash;
-            logger.info(`handle event: ${name}, ${blockNumber}, ${last_id}`);
+            let transaction_hash = event.transactionHash;
+            
             if (blockNumber >= last_id) {
 				let to  =  route.to;
                 const queue_data = {
@@ -694,78 +697,68 @@ async function fetch_deposit_event_by_rpc(name, route) {
                     amount: amount.toString(),
                 };
                 logger.info(`fetch_deposit_event_by_rpc add to queue:' ${queue_data.address} ${queue_data.amount} ${blockNumber}`);
-				//check if the transaction already exists
-				let existingTransaction = await DBUtils.query(
-					`SELECT * FROM transactions 
-					 WHERE name = ? 
-					 AND address = ? 
-					 AND block_number = ? 
-					 AND transaction_hash = ?`,
-					[name, queue_data.address, blockNumber, transaction_hash]
-				);
-				let retry_transaction = false;
-				if (existingTransaction.length > 0) {
-					const existingStatus = existingTransaction[0].status;
-					if (existingStatus === 'INIT') {
-						logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
-						// record retry transaction
-						await DBUtils.query(
-							`INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
-							 VALUES (?, ?, ?, ?, ?)`,
-							[name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
-						);
-						retry_transaction = true;
-					} else {
-						logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
-						continue;
-					}
-				}
 
-				if(!retry_transaction){
-					//insert transaction record with INIT status
-					const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
-					const block_timestamp = timestamp;
-					existingTransaction = await DBUtils.query(
-						`INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
-						VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
-						[name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
-					);
-					logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
-				}
-
-                let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
-                //do transaction
-                const result = await do_transaction(
-                    name,
-                    queue_data.contract,
-                    queue_data.address,
-                    queue_data.amount,
-                    transaction_id
+                // 检查交易是否已存在
+                const existingTransaction = await DBUtils.query(
+                    `SELECT * FROM transactions 
+                     WHERE name = ? 
+                     AND address = ? 
+                     AND block_number = ? 
+                     AND transaction_hash = ?`,
+                    [name, queue_data.address, blockNumber, transaction_hash]
                 );
 
-                //update transaction status
-                if(result) {
-                    await DBUtils.query(
-                        `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
-                        [transaction_id]
-                    );
-                    logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
+                if (existingTransaction.length > 0) {
+                    const existingStatus = existingTransaction[0].status;
+                    if (existingStatus === 'INIT') {
+                        logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
+                        // 记录重试交易
+                        insertQueries.push({
+                            sql: `INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
+                                 VALUES (?, ?, ?, ?, ?)`,
+                            params: [name, queue_data.address, blockNumber, transaction_hash, new Date().toISOString().slice(0, 19).replace('T', ' ')]
+                        });
+                    } else {
+                        logger.info(`Transaction already exists for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Skipping.`);
+                        continue;
+                    }
                 } else {
-                    await DBUtils.query(
-                        `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
-                        [transaction_id]
-                    );
-                    logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
-                    return;
+                    // 准备插入新交易记录
+                    const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
+                    const block_timestamp = timestamp;
+                    insertQueries.push({
+                        sql: `INSERT INTO transactions (name, address, amount, block_number, transaction_hash, timestamp, block_timestamp, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 'INIT')`,
+                        params: [name, queue_data.address, queue_data.amount, blockNumber, transaction_hash, timestamp, block_timestamp]
+                    });
                 }
 
-                //update last_id
-                last_id = blockNumber;
-                await DBUtils.query(`UPDATE last_ids SET last_id = ? WHERE name = ?`, [last_id, name]);
-                logger.info(`update ${name} last_id: ${last_id}`);
+                if (blockNumber > maxBlockNumber) {
+                    maxBlockNumber = blockNumber;
+                }
             }
-        };
-		
+        }
+
+        // If there are records to insert, execute the transaction
+        if (insertQueries.length > 0) {
+            // Add query to update last_id
+            insertQueries.push({
+                sql: `UPDATE last_ids SET last_id = ? WHERE name = ?`,
+                params: [maxBlockNumber, name]
+            });
+
+            try {
+                await DBUtils.transaction(insertQueries);
+                logger.info(`Successfully processed ${insertQueries.length - 1} transactions and updated last_id to ${maxBlockNumber}`);
+            } catch (error) {
+                logger.error('Error in transaction batch:', error);
+                throw error;
+            }
+        } else {
+            // If there are no new transactions, only update last_id
+            await DBUtils.query(`UPDATE last_ids SET last_id = ? WHERE name = ?`, [latestBlock, name]);
+            logger.info(`No new transactions, updated last_id to ${latestBlock}`);
+        }
     } catch (err) {
         logger.error('fetch_deposit_event_by_rpc Error:', err);
     } finally {
@@ -779,5 +772,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
 
 module.exports = {
-	listen_deposit_events
+	listen_deposit_events,
+	do_transaction,
+	routes
 };
