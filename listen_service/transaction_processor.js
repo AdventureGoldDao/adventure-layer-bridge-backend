@@ -13,7 +13,7 @@ async function processTransactions() {
         );
 
         if (pendingTransactions.length === 0) {
-            logger.info(`init transactions length is 0 `)
+            logger.info(`no transactions need to process `)
             return;
         }
 

@@ -56,8 +56,10 @@ function printChainConfig() {
 printChainConfig();
 
 //connect to the blockchain
-const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url,chainConfig.l1_block_delay);
-const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url,chainConfig.l2_block_delay);
+const l1 = new BlockchainConfig(chainConfig.l1_name,chainConfig.l1_rpc_url,chainConfig.l1_wss_url,
+    chainConfig.l1_block_delay, chainConfig.l1_max_priority_fee_gwei, chainConfig.l1_base_fee_multiplier, chainConfig.l1_max_total_fee);
+const l2 = new BlockchainConfig(chainConfig.l2_name,chainConfig.l2_rpc_url,chainConfig.l2_wss_url,
+    chainConfig.l2_block_delay, chainConfig.l2_max_priority_fee_gwei, chainConfig.l2_base_fee_multiplier, chainConfig.l2_max_total_fee);
 
 // Initialize shard arrays
 const shards = [];
@@ -80,7 +82,15 @@ for (let i = 1; i <= 10; i++) { // for more  change it
     const blockDelay = chainConfig[`shard${i}_block_delay`];
 
     if (shardName && shardRpcUrl && shardWssUrl) {
-        const shard = new BlockchainConfig(shardName, shardRpcUrl, shardWssUrl, blockDelay);
+        const shard = new BlockchainConfig(
+            shardName, 
+            shardRpcUrl, 
+            shardWssUrl, 
+            blockDelay,
+            chainConfig[`shard${i}_max_priority_fee_gwei`],
+            chainConfig[`shard${i}_base_fee_multiplier`],
+            chainConfig[`shard${i}_max_total_fee`]
+        );
         shards.push({ index: i, config: shard });
 
         if (shardContractAddress && l2ToShardContractAddress) {
@@ -178,12 +188,24 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 	let status = 'INIT';
 
 	try {
+        // current block
+        const nonce = await rpc_web3.eth.getTransactionCount(senderAddress);
+        const currentBlock = await rpc_web3.eth.getBlock('latest');
+        const baseFeePerGas = new BN(currentBlock.baseFeePerGas);
+
 		if (to.chainConfig.name == chainConfig.l1_name) {
-			// current block
-			const block = await rpc_web3.eth.getBlock('latest');
-			const baseFeePerGas = new BN(block.baseFeePerGas); 
-			const maxPriorityFeePerGas = new BN(w3.utils.toWei('1', 'gwei')); 
-			const maxFeePerGas = baseFeePerGas.mul(new BN(1.5)).add(maxPriorityFeePerGas);
+			//  EIP-1559 
+			const maxPriorityFeePerGas = new BN(w3.utils.toWei(to.chainConfig.max_priority_fee_gwei, 'gwei')); 
+            // baseFeePerGas * base_fee_multiplier + priority_fee
+			const maxFeePerGas = baseFeePerGas.mul(new BN(to.chainConfig.base_fee_multiplier)).add(maxPriorityFeePerGas);
+
+            // check if the maximum total fee exceeds the limit
+            const maxTotalFee = maxFeePerGas.mul(new BN(gasLimit));
+            const maxAllowedFee = new BN(to.chainConfig.max_total_fee);
+            if (maxTotalFee.gt(maxAllowedFee)) {
+                logger.error(`Transaction fee too high: ${maxTotalFee.toString()} > ${maxAllowedFee.toString()}`);
+                throw new Error(`Transaction fee exceeds maximum allowed fee: ${maxTotalFee.toString()} > ${maxAllowedFee.toString()}`);
+            }
 
 			//modify: transfer erc20 token for L1
 
@@ -203,44 +225,47 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 
 			const data = tokenContract.methods.transfer(recipientAddress, amountToSend).encodeABI();
 
-			const nonce = await rpc_web3.eth.getTransactionCount(senderAddress);
 
 			transactionObject = {
 				from: senderAddress,
 				to: chainConfig.erc20_token_address,
-				gas: gasLimit,
 				data: data,
 				nonce:Number(nonce),
+				gas: gasLimit,
 				maxFeePerGas: maxFeePerGas.toString(),
 				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
 			};
-			//logger.info("Nonce type:", typeof transactionObject.nonce);  
-            //logger.info("Gas type:", typeof transactionObject.gas);     
-
 
 		}
 		else {
-            //w3.utils.toWei(amountToSend, 'ether')
             
-			const currentBlock = await rpc_web3.eth.getBlock('latest');
-			const baseFeePerGas = new BN(currentBlock.baseFeePerGas);
-			const maxPriorityFeePerGas = new BN(w3.utils.toWei('2', 'gwei')); // 动态设置优先费
-			const dynamicGasPrice = baseFeePerGas.mul(new BN(2)).add(maxPriorityFeePerGas); // 动态计算 gasPrice
+            // not EIP-1559 use 
+			const maxPriorityFeePerGas = new BN(w3.utils.toWei(to.chainConfig.max_priority_fee_gwei, 'gwei')); 
+            // gasPrice = baseFeePerGas * base_fee_multiplier + priority_fee
+            const dynamicGasPrice = baseFeePerGas.mul(new BN(to.chainConfig.base_fee_multiplier)).add(maxPriorityFeePerGas);
 
-			const estimatedGasLimit = await rpc_web3.eth.estimateGas({
+            // check if the maximum total fee exceeds the limit
+            const estimatedGasLimit = await rpc_web3.eth.estimateGas({
 				from: senderAddress,
 				to: recipientAddress,
 				value: amountToSend.toString(),
 			}); // dynamic estimate gasLimit
+
+            const maxTotalFee = dynamicGasPrice.mul(new BN(estimatedGasLimit));
+            const maxAllowedFee = new BN(to.chainConfig.max_total_fee);
+            if (maxTotalFee.gt(maxAllowedFee)) {
+                logger.error(`Transaction fee too high: ${maxTotalFee.toString()} > ${maxAllowedFee.toString()}`);
+                throw new Error(`Transaction fee exceeds maximum allowed fee: ${maxTotalFee.toString()} > ${maxAllowedFee.toString()}`);
+            }
 
 			// ensure all values are converted to strings
 			transactionObject = {
 				from: senderAddress,
 				to: recipientAddress,
 				value: amountToSend.toString(),
+				nonce: Number(nonce),
 				gasPrice: dynamicGasPrice.toString(),
-				gas: estimatedGasLimit.toString(),
-				nonce: await rpc_web3.eth.getTransactionCount(senderAddress)
+				gas: estimatedGasLimit.toString()
 			}
 
 			logger.info(`Transaction object: ${JSON.stringify(transactionObject, (key, value) =>

@@ -1,7 +1,8 @@
 const { Web3 } = require('web3');
 
 class BlockchainConfig {
-	constructor(name, rpc_url, wss_url , block_delay = 0) {
+	constructor(name, rpc_url, wss_url , block_delay ,
+		 max_priority_fee_gwei, base_fee_multiplier ,max_total_fee  ){
 		// Name of the blockchain
 		this.name = name;
 		// RPC URL for HTTP connection
@@ -14,6 +15,11 @@ class BlockchainConfig {
 		this.wsWeb3 = new Web3(wss_url);
 		// 
 		this.block_delay = block_delay;
+		// Priority fee (Gwei)
+		this.max_priority_fee_gwei= max_priority_fee_gwei;
+		// Base fee multiplier
+		this.base_fee_multiplier= base_fee_multiplier;        
+		this.max_total_fee= max_total_fee
 	}
 }
 
