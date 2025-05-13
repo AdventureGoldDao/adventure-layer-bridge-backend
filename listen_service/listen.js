@@ -163,7 +163,7 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
     }
 	if(chainConfig.mock_transactions == 'true'){
 		logger.info('mock_transactions is true');
-		return true;
+		return 'SUCCESS';
 	}
 
 	// Sender's account address and private key
@@ -197,7 +197,7 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 			//  EIP-1559 
 			const maxPriorityFeePerGas = new BN(w3.utils.toWei(to.chainConfig.max_priority_fee_gwei, 'gwei')); 
             // baseFeePerGas * base_fee_multiplier + priority_fee
-			const maxFeePerGas = baseFeePerGas.mul(new BN(to.chainConfig.base_fee_multiplier)).add(maxPriorityFeePerGas);
+			const maxFeePerGas = baseFeePerGas.mul(new BN(Number(to.chainConfig.base_fee_multiplier))).add(maxPriorityFeePerGas);
 
             // check if the maximum total fee exceeds the limit
             const maxTotalFee = maxFeePerGas.mul(new BN(gasLimit));
@@ -223,18 +223,22 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 			];
 			const tokenContract = new rpc_web3.eth.Contract(tokenABI, chainConfig.erc20_token_address);
 
-			const data = tokenContract.methods.transfer(recipientAddress, amountToSend).encodeABI();
+			try {
+				const data = tokenContract.methods.transfer(recipientAddress, amountToSend).encodeABI();
 
-
-			transactionObject = {
-				from: senderAddress,
-				to: chainConfig.erc20_token_address,
-				data: data,
-				nonce:Number(nonce),
-				gas: gasLimit,
-				maxFeePerGas: maxFeePerGas.toString(),
-				maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
-			};
+				transactionObject = {
+					from: senderAddress,
+					to: chainConfig.erc20_token_address,
+					data: data,
+					nonce: Number(nonce),
+					gas: gasLimit,
+					maxFeePerGas: maxFeePerGas.toString(),
+					maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+				};
+			} catch (err) {
+				logger.error(`Error encoding token transfer data: ${err.message}`);
+				throw new Error(`Failed to encode token transfer data: ${err.message}`);
+			}
 
 		}
 		else {
@@ -267,12 +271,11 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 				gasPrice: dynamicGasPrice.toString(),
 				gas: estimatedGasLimit.toString()
 			}
-
-			logger.info(`Transaction object: ${JSON.stringify(transactionObject, (key, value) =>
-				typeof value === 'bigint' ? value.toString() : value
-			)}`);
 		}
 
+        logger.info(`Transaction object: ${JSON.stringify(transactionObject, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value
+        )}`);
 
 
 		// record transaction flow
@@ -292,12 +295,8 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 		const existingFlowList = await DBUtils.query(
 			`SELECT * FROM transaction_flow 
 			WHERE transaction_id = ? 
-			AND name = ? 
-			AND from_address = ? 
-			AND to_address = ? 
-			AND amount = ?
 			ORDER BY id DESC LIMIT 1`,
-			[flowData.transaction_id, flowData.name, flowData.from_address, flowData.to_address, flowData.amount]
+			[flowData.transaction_id]
 		);
 
 
@@ -309,17 +308,17 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 
             if(existingFlow.status == 'SUCCESS'){
                 logger.info(`Transaction flow already exists: ${existingFlow.transaction_id} ${existingFlow.status} return true`);
-                return true;
+                return 'SUCCESS';
             }
 
             // if the transaction hash is not null, and the status is FAIL, return false
             if(existingFlow.status == 'FAIL' && existingFlow.transaction_hash != null){
                 console.log(`transaction_flow ${existingFlow.transaction_id} already exists and status is ${existingFlow.status}`);
-                return false; 
+                return 'FAIL'; 
             }
             
             // need query the transaction hash
-            if(existingFlow.status == 'INIT' && existingFlow.transaction_hash != null){
+            if((existingFlow.status == 'INIT' || existingFlow.status == 'PENDING')  && existingFlow.transaction_hash != null){
                 logger.info(`Transaction flow already exists: ${existingFlow.transaction_id} ${existingFlow.status} start query `);
                 // if the transaction is in INIT status, update the status to SUCCESS
                 try{
@@ -338,6 +337,21 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                         logger.info(`Transaction ${existingFlow.transaction_hash} confirmed as SUCCESS on chain.`);
                         const blockNumber = receipt.blockNumber;
                         logger.info(`Transaction ${existingFlow.transaction_hash} is included in block number: ${blockNumber}`);
+
+                        // 如果是 L1 交易,需要检查区块确认数
+                        if (to.chainConfig.name === chainConfig.l1_name) {
+                            const currentBlock = await rpc_web3.eth.getBlockNumber();
+                            const blockDelay = to.chainConfig.block_delay;
+                            const confirmations = currentBlock - blockNumber;
+                            
+                            logger.info(`L1 transaction ${existingFlow.transaction_hash} confirmations: ${confirmations}, required: ${blockDelay}`);
+                            
+                            if (confirmations < blockDelay) {
+                                logger.info(`L1 transaction ${existingFlow.transaction_hash} needs more confirmations. Current: ${confirmations}, Required: ${blockDelay}`);
+                                return "PENDING";
+                            }
+                        }
+
                         const updateResult = await DBUtils.query(
                             `UPDATE transaction_flow SET status = 'SUCCESS', block_number = ? WHERE id = ?`,
                             [blockNumber, existingFlow.id]
@@ -345,10 +359,10 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                         
                         if (updateResult.affectedRows === 0) {
                             logger.error(`Failed to update transaction_flow status for id: ${existingFlow.id}`);
-                            return false;
+                            return 'FAIL';
                         }
                     
-                        return true;
+                        return 'SUCCESS';
                     } else {
                         logger.error(`Transaction ${existingFlow.transaction_hash} confirmed as FAIL on chain.`);
                         const updateResult = await DBUtils.query(
@@ -357,9 +371,9 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                         );
                         if (updateResult.affectedRows === 0) {
                             logger.error(`Failed to update transaction_flow status for id: ${existingFlow.id}`);
-                            return false;
+                            return 'FAIL';
                         }
-                        return false;
+                        return 'FAIL';
                     }
                 } catch(err){
                     logger.error(`Transaction ${existingFlow.transaction_hash} query error: ${err.message}`);
@@ -407,15 +421,47 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                     if (receipt.status) {
                         status = 'SUCCESS';
                         const blockNumber = receipt.blockNumber;
-                        logger.info(`${net_name} ${flowData.transaction_id} Transaction Receipt: SUCCESS, block number: ${blockNumber}`);
-                        // update transaction status to success and block number
-                        DBUtils.query(
-                            `UPDATE transaction_flow SET status = ?, block_number = ? WHERE id = ?`,
-                            [status, blockNumber, flowResult.insertId]
-                        );
-                        resolve(true);
+                        logger.info(`${net_name} Transaction ${flowData.transaction_id}  Receipt: SUCCESS, block number: ${blockNumber}`);
+
+                        // 如果是 L1 交易,需要检查区块确认数
+                        if (to.chainConfig.name === chainConfig.l1_name) {
+                            rpc_web3.eth.getBlockNumber().then(currentBlock => {
+                                const blockDelay = to.chainConfig.block_delay;
+                                const confirmations = currentBlock - blockNumber;
+                                
+                                logger.info(`L1 transaction ${transactionHash} confirmations: ${confirmations}, required: ${blockDelay}`);
+                                
+                                if (confirmations < blockDelay) {
+                                    logger.info(`L1 transaction ${transactionHash} needs more confirmations. Current: ${confirmations}, Required: ${blockDelay}`);
+                                    // update transaction status to pending
+                                    DBUtils.query(
+                                        `UPDATE transaction_flow SET status = 'PENDING', block_number = ? WHERE id = ?`,
+                                        [blockNumber, flowResult.insertId]
+                                    );
+                                    resolve("PENDING");
+                                    return;
+                                }
+
+                                // update transaction status to success and block number
+                                DBUtils.query(
+                                    `UPDATE transaction_flow SET status = ?, block_number = ? WHERE id = ?`,
+                                    [status, blockNumber, flowResult.insertId]
+                                );
+                                resolve('SUCCESS');
+                            }).catch(err => {
+                                logger.error(`Error getting current block number: ${err}`);
+                                reject(err);
+                            });
+                        } else {
+                            // 非 L1 交易直接更新状态
+                            DBUtils.query(
+                                `UPDATE transaction_flow SET status = ?, block_number = ? WHERE id = ?`,
+                                [status, blockNumber, flowResult.insertId]
+                            );
+                            resolve('SUCCESS');
+                        }
                     } else {
-                        status = 'FAIL';
+                        status = 'PENDING';
                         errorMessage = 'Transaction reverted by EVM';
                         logger.error(`${net_name} ${flowData.transaction_id} Transaction Receipt: FAILED - ${errorMessage}`);
                         // update transaction status to fail and record error message
@@ -423,7 +469,7 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
                             `UPDATE transaction_flow SET status = ?, error_message = ? WHERE id = ?`,
                             [status, errorMessage, flowResult.insertId]
                         );
-                        resolve(false);
+                        resolve('PENDING');
                     }
                 })
                 .on('error', err => {
@@ -455,29 +501,32 @@ async function do_transaction(name, to, recipient, amount, transactionId) {
 
 
 async function listen_deposit_events() {
-	logger.info('listen_deposit_events start');
-	let lock = false;
-	setInterval(async () => {
-		if(lock){
-			return;
-		}
-		lock = true;
-		try {
-			for (const [name, route] of routes) {
-				if('L1->L2' == name && chainConfig.l1_graph_query_use == 'true'){
-					logger.info(`use graph sql to query the latest deposit events`)
-					await fetch_deposit_event_by_graph_sql(name, route.to_contract );
-				}else{
-					await fetch_deposit_event_by_rpc(name, route );
-				}
-			}
-			await processTransactions();
-		} catch (error) {
-			logger.error('Error in listen_deposit_events interval:', error);
-		} finally {
-			lock = false;
-		}
-	}, 5000);
+    logger.info('listen_deposit_events start');
+    let lock = false;
+    setInterval(async () => {
+        if(lock){
+            return;
+        }
+        lock = true;
+        try {
+            for (const [name, route] of routes) {
+                if('L1->L2' == name && chainConfig.l1_graph_query_use == 'true'){
+                    logger.info(`use graph sql to query the latest deposit events`)
+                    await fetch_deposit_event_by_graph_sql(name, route.to_contract );
+                }else{
+                    await fetch_deposit_event_by_rpc(name, route );
+                }
+            }
+            await processTransactions(do_transaction, (name) => {
+                const route = routes.get(name);
+                return route ? route.to : null;
+            });
+        } catch (error) {
+            logger.error('Error in listen_deposit_events interval:', error);
+        } finally {
+            lock = false;
+        }
+    }, 5000);
 }
 
 
@@ -628,31 +677,6 @@ async function fetch_deposit_event_by_graph_sql(name, to_contract) {
                         );
                         logger.info('Transaction record inserted with INIT status:', queue_data.address, queue_data.amount, blockNumber);
                     }
-                    // let transaction_id = existingTransaction.insertId || (existingTransaction[0] && existingTransaction[0].id);
-                    // //do transaction
-                    // const result = await do_transaction(
-                    //     name,
-                    //     queue_data.contract,
-                    //     queue_data.address,
-                    //     queue_data.amount,
-                    //     transaction_id
-                    // );
-
-                    // //update transaction status
-                    // if(result) {
-                    //     await DBUtils.query(
-                    //         `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
-                    //         [transaction_id]
-                    //     );
-                    //     logger.info(`Transaction status updated to SUCCESS: ${transaction_id}`);
-                    // } else {
-                    //     await DBUtils.query(
-                    //         `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
-                    //         [transaction_id]
-                    //     );
-                    //     logger.error(`Transaction status updated to FAIL: ${transaction_id}`);
-                    //     return;
-                    // }
 
                     last_id = blockNumber;
                     await DBUtils.query(`UPDATE last_ids SET last_id = ${last_id} WHERE name = '${name}'`);
@@ -727,7 +751,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
         logger.info(`fetch_deposit_event_by_rpc events data: ${name}, ${events.length}`);
 
-        // 准备批量插入的数据
+        // Prepare batch insert data
         const insertQueries = [];
         let maxBlockNumber = last_id;
 
@@ -745,7 +769,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                 };
                 logger.info(`fetch_deposit_event_by_rpc add to queue:' ${queue_data.address} ${queue_data.amount} ${blockNumber}`);
 
-                // 检查交易是否已存在
+                // Check if transaction already exists
                 const existingTransaction = await DBUtils.query(
                     `SELECT * FROM transactions 
                      WHERE name = ? 
@@ -759,7 +783,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                     const existingStatus = existingTransaction[0].status;
                     if (existingStatus === 'INIT') {
                         logger.info(`Transaction in INIT status for ${name}, ${queue_data.address}, block ${blockNumber}, hash ${transaction_hash}. Retrying.`);
-                        // 记录重试交易
+                        // Record retry transaction
                         insertQueries.push({
                             sql: `INSERT INTO retry_transactions (name, address, block_number, transaction_hash, retry_timestamp) 
                                  VALUES (?, ?, ?, ?, ?)`,
@@ -770,7 +794,7 @@ async function fetch_deposit_event_by_rpc(name, route) {
                         continue;
                     }
                 } else {
-                    // 准备插入新交易记录
+                    // Prepare to insert new transaction record
                     const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
                     const block_timestamp = timestamp;
                     insertQueries.push({
@@ -819,7 +843,5 @@ async function fetch_deposit_event_by_rpc(name, route) {
 
 
 module.exports = {
-	listen_deposit_events,
-	do_transaction,
-	routes
+	listen_deposit_events
 };

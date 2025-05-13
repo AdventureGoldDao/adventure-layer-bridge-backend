@@ -11,6 +11,14 @@ CREATE TABLE IF NOT EXISTS last_ids (
     PRIMARY KEY (name)           -- Primary key on 'name' to ensure uniqueness
 );
 
+CREATE TABLE IF NOT EXISTS distributed_locks (
+    lock_name VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (lock_name),
+    INDEX idx_expires_at (expires_at)
+) ENGINE=InnoDB; 
+
 -- Create a table 'transactions' to store transaction details
 CREATE TABLE IF NOT EXISTS transactions (
     id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each transaction
@@ -21,10 +29,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     transaction_hash VARCHAR(255) NOT NULL,  -- Unique hash of the transaction
     block_timestamp DATETIME NOT NULL,  -- Timestamp of the block containing the transaction
     timestamp DATETIME NOT NULL,        -- Timestamp of the transaction itself
-    status ENUM('INIT', 'SUCCESS', 'FAIL') NOT NULL DEFAULT 'INIT', -- Status of the transaction
+    status ENUM('INIT', 'SUCCESS', 'FAIL', 'PENDING') NOT NULL DEFAULT 'INIT', -- Status of the transaction
+    error_message TEXT,                 -- Error message if any
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Update timestamp
-    UNIQUE (name, address, block_number, transaction_hash) -- Ensure uniqueness for combination of name, address, and block number
+    UNIQUE (name, address, block_number, transaction_hash), -- Ensure uniqueness for combination of name, address, and block number
+    INDEX idx_status (status)           -- Create an index on the status column
 );
 
 -- Create a table 'retry_transactions' to store retry transaction details
@@ -39,17 +49,6 @@ CREATE TABLE IF NOT EXISTS retry_transactions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP-- Update timestamp
 );
 
-
-CREATE TABLE IF NOT EXISTS distributed_locks (
-    lock_name VARCHAR(255) NOT NULL,
-    expires_at DATETIME NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (lock_name),
-    INDEX idx_expires_at (expires_at)
-) ENGINE=InnoDB; 
-
-
-
 -- Create a table 'transaction_flow' to store detailed transaction flow information
 CREATE TABLE IF NOT EXISTS transaction_flow (
     id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each flow record
@@ -63,10 +62,11 @@ CREATE TABLE IF NOT EXISTS transaction_flow (
     nonce BIGINT,                       -- Transaction nonce
     transaction_hash VARCHAR(255),      -- Transaction hash
     block_number BIGINT,                -- Block number where transaction is included
-    status ENUM('INIT', 'SUCCESS', 'FAIL') NOT NULL DEFAULT 'INIT', -- Status of the transaction
+    status ENUM('INIT', 'SUCCESS', 'FAIL', 'PENDING') NOT NULL DEFAULT 'INIT', -- Status of the transaction
     error_message TEXT,                 -- Error message if any
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Update timestamp
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Update timestamp
+    INDEX idx_transaction_id (transaction_id)           -- Create an index on the status column
 ); 
 
 -- Insert initial data into 'last_ids' table

@@ -1,13 +1,12 @@
 const DBUtils = require('./db_utils');
 const logger = require('./log_utils');
-const { do_transaction } = require('./listen');
 
-async function processTransactions() {
+async function processTransactions(doTransactionFunc, getRouteFunc) {
     try {
-        // 获取所有状态为 INIT 的交易
+        // Get all transactions with status INIT or PENDING
         const pendingTransactions = await DBUtils.query(
             `SELECT * FROM transactions 
-             WHERE status = 'INIT' 
+             WHERE status in ('INIT', 'PENDING') 
              ORDER BY id ASC 
              LIMIT 10`
         );
@@ -21,15 +20,15 @@ async function processTransactions() {
 
         for (const tx of pendingTransactions) {
             try {
-                // 获取合约配置
-                const contractConfig = await getContractConfig(tx.name);
+                // Get contract configuration
+                const contractConfig = await getRouteFunc(tx.name);
                 if (!contractConfig) {
                     logger.error(`No contract config found for ${tx.name}`);
                     continue;
                 }
 
-                // 执行交易
-                const result = await do_transaction(
+                // Execute transaction
+                const result = await doTransactionFunc(
                     tx.name,
                     contractConfig,
                     tx.address,
@@ -37,20 +36,29 @@ async function processTransactions() {
                     tx.id
                 );
 
-                // 更新交易状态
-                if (result) {
+                // Update transaction status
+                if (result === 'SUCCESS') {
                     await DBUtils.query(
                         `UPDATE transactions SET status = 'SUCCESS' WHERE id = ?`,
                         [tx.id]
                     );
                     logger.info(`Transaction ${tx.id} status updated to SUCCESS`);
-                } else {
+                } else if(result === "PENDING") {
+                    await DBUtils.query(
+                        `UPDATE transactions SET status = 'PENDING' WHERE id = ?`,
+                        [tx.id]
+                    );
+                    logger.info(`Transaction ${tx.id} status updated to PENDING`);
+                } else if(result === 'FAIL') {
                     await DBUtils.query(
                         `UPDATE transactions SET status = 'FAIL' WHERE id = ?`,
                         [tx.id]
                     );
                     logger.error(`Transaction ${tx.id} status updated to FAIL`);
+                }else{
+                    logger.error(`Transaction ${tx.id} status updated to UNKNOWN`);
                 }
+
             } catch (error) {
                 logger.error(`Error processing transaction ${tx.id}:`, error);
                 await DBUtils.query(
@@ -62,13 +70,6 @@ async function processTransactions() {
     } catch (error) {
         logger.error('Error in processPendingTransactions:', error);
     }
-}
-
-async function getContractConfig(name) {
-    //  from  listen.js get
-    const { routes } = require('./listen');
-    const route = routes.get(name);
-    return route ? route.to : null;
 }
 
 module.exports = {
