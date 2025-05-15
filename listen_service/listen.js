@@ -517,16 +517,30 @@ async function listen_deposit_events() {
                     await fetch_deposit_event_by_rpc(name, route );
                 }
             }
-            await processTransactions(do_transaction, (name) => {
-                const route = routes.get(name);
-                return route ? route.to : null;
-            });
+            const lockName = `transaction_flow`;
+            const hasLock = await acquireLock(lockName);
+            if (!hasLock) {
+                logger.info(`Another instance is processing ${name} graph events`);
+                return;
+            }
+            try{
+                await processTransactions(do_transaction, (name) => {
+                    const route = routes.get(name);
+                    return route ? route.to : null;
+                });
+            } finally {
+                try {
+                    await releaseLock(lockName);
+                } catch (err) {
+                    logger.error(`Error releasing lock ${lockName}:`, err);
+                }
+            }
         } catch (error) {
             logger.error('Error in listen_deposit_events interval:', error);
         } finally {
             lock = false;
         }
-    }, 5000);
+    }, 60*1000);
 }
 
 
